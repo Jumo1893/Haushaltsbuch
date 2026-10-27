@@ -9,7 +9,8 @@ Saldo sehen und Ausgaben nach Kategorien auswerten.
 | Backend   | Node.js + Express (REST-API)                               |
 | Datenbank | PostgreSQL 16                                              |
 
-Alles läuft in Docker, mehr braucht es für den normalen Betrieb nicht.
+Alles läuft in Containern mit [Podman](https://podman.io/), mehr braucht es für den normalen Betrieb nicht.
+Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker compose` ersetzen.
 
 ## Funktionen
 - Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Kategorie und Notiz anlegen und löschen
@@ -25,17 +26,40 @@ Kategorien:
 Die Kategorien sind in `frontend/src/types.ts` festgelegt und lassen sich dort anpassen.
 
 ## Voraussetzungen
-- [Docker](https://docs.docker.com/get-docker/) mit Docker Compose (z. B. Docker Desktop)
+- [Podman](https://podman.io/docs/installation) (z. B. Podman Desktop) mit einem Compose-Provider:
+  `podman compose` nutzt `docker-compose`, wenn es installiert ist, sonst `podman-compose`.
+  Empfohlen ist `docker-compose`, weil es alle Funktionen der `docker-compose.yml` unterstützt
+  (u. a. das Warten auf die Datenbank per Healthcheck).
 - Nur für die Frontend-Entwicklung: [Node.js](https://nodejs.org/) 20.19+ oder 22.12+
+
+Prüfen, ob alles bereit ist:
+```
+podman --version
+podman compose version
+```
+
+Unter Windows und macOS laufen die Container in einer virtuellen Maschine. Einmalig anlegen und
+nach jedem Neustart des Rechners starten:
+```
+podman machine init
+podman machine start
+```
 
 ## Schnellstart
 ```
-docker compose up --build
+podman compose up --build
 ```
 Dann http://localhost:8080 öffnen.
 
-Mit `-d` laufen die Container im Hintergrund (`docker compose up -d --build`).
+Mit `-d` laufen die Container im Hintergrund (`podman compose up -d --build`).
 Die Datenbanktabelle legt das Backend beim ersten Start automatisch an.
+
+**Nach einem Neustart des Rechners** startet Podman die Container nicht von selbst wieder
+(`restart: unless-stopped` greift nur, solange die Podman-Maschine läuft). Dann einfach
+`podman machine start` und `podman compose up -d` ausführen. Die Daten bleiben erhalten.
+
+Die Image-Namen sind voll ausgeschrieben (z. B. `docker.io/library/postgres:16-alpine`), damit
+Podman sie ohne Rückfrage nach der Registry auflösen kann.
 
 ## Konfiguration
 Einstellungen kommen aus einer Datei `.env` neben `docker-compose.yml`. Sie ist optional,
@@ -56,7 +80,7 @@ DB_PORT=5433
 ### Passwort ändern (empfohlen)
 `DB_PASSWORD` in der `.env` setzen und neu starten. **Achtung:** Postgres übernimmt das Passwort
 nur beim allerersten Start, wenn das Datenvolume angelegt wird. Wenn du es später änderst, musst du
-vorher `docker compose down -v` ausführen. Das löscht alle Daten, sichere sie also vorher (siehe „Backup“).
+vorher `podman compose down -v` ausführen. Das löscht alle Daten, sichere sie also vorher (siehe „Backup“).
 
 ## Ports und Erreichbarkeit
 
@@ -75,9 +99,9 @@ erreichbar. Wenn sie nur auf dem eigenen Rechner laufen soll, in `docker-compose
 `"127.0.0.1:8080:80"` statt `"8080:80"` eintragen.
 
 ## Frontend entwickeln (mit Hot Reload)
-Datenbank und Backend in Docker laufen lassen, das Frontend lokal mit Vite starten:
+Datenbank und Backend in Podman laufen lassen, das Frontend lokal mit Vite starten:
 ```
-docker compose up -d db backend
+podman compose up -d db backend
 cd frontend
 npm install
 npm run dev
@@ -94,7 +118,7 @@ Weitere Befehle in `frontend/`:
 - `npm run preview`: den Produktions-Build lokal ansehen
 
 Nach Änderungen am Backend (`backend/server.js`) das Backend neu bauen:
-`docker compose up -d --build backend`.
+`podman compose up -d --build backend`.
 
 ## Projektstruktur
 ```
@@ -143,19 +167,19 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | `created_at` | `TIMESTAMPTZ`   | Zeitpunkt der Erfassung         |
 
 ### Backup und Wiederherstellen
-Die Daten liegen im Docker-Volume `dbdata`. Die Befehle sind für Bash (z. B. Git Bash) oder `cmd`.
+Die Daten liegen im Volume `dbdata` (in Podman: `haushaltsbuch_dbdata`, siehe `podman volume ls`). Die Befehle sind für Bash (z. B. Git Bash) oder `cmd`.
 Windows PowerShell 5.1 schreibt mit `>` eine UTF-16-Datei und kennt `<` nicht.
 ```
-docker compose exec -T db pg_dump -U budget --clean --if-exists budget > backup.sql
+podman compose exec -T db pg_dump -U budget --clean --if-exists budget > backup.sql
 ```
 Wiederherstellen (ersetzt den aktuellen Inhalt der Datenbank):
 ```
-docker compose exec -T db psql -U budget budget < backup.sql
+podman compose exec -T db psql -U budget budget < backup.sql
 ```
 
 ## Stoppen
-- `docker compose down`: Container stoppen, Daten bleiben im Volume `dbdata`
-- `docker compose down -v`: Container stoppen und **alle Daten löschen**
+- `podman compose down`: Container stoppen, Daten bleiben im Volume `dbdata`
+- `podman compose down -v`: Container stoppen und **alle Daten löschen**
 
 ## API
 Alle Endpunkte liegen unter `/api` und sprechen JSON.
@@ -174,9 +198,13 @@ Body für `POST`:
 Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`.
 
 ## Fehlerbehebung
-- **„Der Server ist nicht erreichbar“ in der App:** Prüfen, ob alle Container laufen (`docker compose ps`),
-  und die Logs ansehen (`docker compose logs backend`).
+- **`Cannot connect to Podman` oder ähnliche Verbindungsfehler:** Die Podman-Maschine läuft nicht.
+  `podman machine start` ausführen.
+- **`short-name resolution` beim Bauen:** Ein Image ist ohne Registry angegeben. Immer den vollen Namen
+  verwenden, z. B. `docker.io/library/node:22-alpine`.
+- **„Der Server ist nicht erreichbar“ in der App:** Prüfen, ob alle Container laufen (`podman compose ps`),
+  und die Logs ansehen (`podman compose logs backend`).
 - **Port bereits belegt:** In der `.env` `DB_PORT` bzw. `API_PORT` ändern. Für das Frontend in
   `docker-compose.yml` den Port `8080` anpassen.
 - **Anmeldung an der DB schlägt nach Passwortänderung fehl:** Siehe „Passwort ändern“. Das neue Passwort
-  wirkt erst nach `docker compose down -v`.
+  wirkt erst nach `podman compose down -v`.
