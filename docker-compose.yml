@@ -19,6 +19,8 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://budget:${DB_PASSWORD:-change-me}@db:5432/budget
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy

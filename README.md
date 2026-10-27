@@ -1,12 +1,27 @@
 # Haushaltsbuch
 
-Frontend (nginx) + Backend (Node/Express) + Datenbank (PostgreSQL), alles in Docker.
+Frontend (React + Vite + TypeScript, ausgeliefert über nginx) + Backend (Node/Express) + Datenbank (PostgreSQL), alles in Docker.
 
 ## Starten
 ```
 docker compose up --build
 ```
 Dann http://localhost:8080 öffnen.
+
+## Frontend entwickeln (mit Hot Reload)
+Backend und DB in Docker laufen lassen, das Frontend lokal mit Vite starten:
+```
+docker compose up -d db backend
+cd frontend
+npm install
+npm run dev
+```
+Dann die von Vite angezeigte Adresse öffnen (Standard: http://localhost:5173).
+Vite leitet `/api` an das Backend auf `localhost:3000` weiter (nur lokal erreichbar;
+anderer Port per `API_PORT` in der `.env`, dann `API_URL=http://localhost:<port> npm run dev`).
+
+Quellcode liegt in `frontend/src` (`App.tsx`, Komponenten in `components/`).
+Beim `docker compose up --build` wird das Frontend im Container gebaut (`npm run build`).
 
 ## Passwort ändern (empfohlen)
 Datei `.env` neben `docker-compose.yml` anlegen:
