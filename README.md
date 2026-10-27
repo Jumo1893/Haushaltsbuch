@@ -31,6 +31,18 @@ DB_PASSWORD=ein-langes-geheimes-passwort
 Danach neu starten. Hinweis: Das Passwort wird beim ersten Start in der DB festgelegt.
 Wenn du es später änderst, vorher `docker compose down -v` ausführen (löscht alle Daten).
 
+## Datenbank mit pgAdmin öffnen
+Die DB ist vom Host aus unter `localhost:5432` erreichbar (nur lokal, nicht aus dem Netzwerk).
+In pgAdmin einen neuen Server anlegen:
+- Host: `localhost`
+- Port: `5432`
+- Datenbank: `budget`
+- Benutzer: `budget`
+- Passwort: Wert von `DB_PASSWORD` (Standard: `change-me`)
+
+Ist Port 5432 bereits belegt (z. B. durch ein lokal installiertes PostgreSQL),
+in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
+
 ## Stoppen
 - `docker compose down` – Daten bleiben im Volume `dbdata`
 - `docker compose down -v` – Daten werden gelöscht
