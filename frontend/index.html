@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Haushaltsbuch</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--bg:#EEF2F4;--surface:#fff;--ink:#14202B;--muted:#5D6B77;--line:#D5DDE2;--in:#1B7F5C;--out:#B8431A;--accent:#14202B;--on-accent:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0F171D;--surface:#172229;--ink:#E7EEF2;--muted:#93A3AF;--line:#26343D;--in:#4FC79A;--out:#F08A5D;--accent:#E7EEF2;--on-accent:#0F171D}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0F171D;--surface:#172229;--ink:#E7EEF2;--muted:#93A3AF;--line:#26343D;--in:#4FC79A;--out:#F08A5D;--accent:#E7EEF2;--on-accent:#0F171D}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.4rem;font-weight:600;margin:0}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.month{display:flex;align-items:center;gap:8px}
+.month span{min-width:140px;text-align:center;font-weight:500}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+.icon{background:var(--surface);border:1px solid var(--line);border-radius:8px;width:36px;height:36px}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.balance{background:var(--accent);color:var(--on-accent);border-radius:14px;padding:22px 20px;margin-bottom:16px}
+.balance small{opacity:.75;display:block}
+.balance strong{font-size:2.4rem;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+.split{display:flex;gap:24px;margin-top:12px;font-size:.95rem}
+.split b{font-weight:600}
+section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}
+h2{font-size:1rem;margin:0 0 12px;font-weight:600}
+form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+form .full{grid-column:1/-1}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:3px}
+input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg label{flex:1;margin:0;text-align:center;padding:9px;cursor:pointer;color:var(--ink);font-size:1rem}
+.seg input{position:absolute;opacity:0;width:0}
+.seg input:checked+span{font-weight:600}
+.seg label:has(input:checked){background:var(--accent);color:var(--on-accent)}
+.seg label:has(input:focus-visible){outline:2px solid var(--ink);outline-offset:-4px}
+.add{background:var(--accent);color:var(--on-accent);border:0;border-radius:8px;padding:11px;font-weight:600}
+.bar{display:grid;grid-template-columns:110px 1fr auto;gap:10px;align-items:center;margin:8px 0;font-size:.95rem}
+.track{height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+.fill{height:100%;background:var(--out);border-radius:5px}
+ul{list-style:none;margin:0;padding:0}
+li{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+li small{color:var(--muted);display:block}
+.amt{font-variant-numeric:tabular-nums;font-weight:500}
+.in{color:var(--in)}.out{color:var(--out)}
+.del{background:none;border:0;color:var(--muted);padding:4px 8px;border-radius:6px}
+.empty{color:var(--muted);margin:0}
+.errbox{background:var(--surface);border:1px solid var(--out);color:var(--out);border-radius:10px;padding:12px 16px;margin:0 0 16px}
+@media (max-width:480px){.bar{grid-template-columns:90px 1fr auto}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Haushaltsbuch</h1>
+  <div class="month">
+    <button class="icon" id="prev" aria-label="Voriger Monat">‹</button>
+    <span id="monthLabel"></span>
+    <button class="icon" id="next" aria-label="Nächster Monat">›</button>
+  </div>
+</header>
+
+<p id="err" class="errbox" role="alert" hidden></p>
+
+<div class="balance">
+  <small>Saldo im Monat</small>
+  <strong id="saldo">0,00 €</strong>
+  <div class="split"><div>Einnahmen <b id="sumIn">0,00 €</b></div><div>Ausgaben <b id="sumOut">0,00 €</b></div></div>
+</div>
+
+<section>
+  <h2>Neue Buchung</h2>
+  <form id="f">
+    <div class="full seg" role="radiogroup" aria-label="Art">
+      <label><input type="radio" name="type" value="out" checked><span>Ausgabe</span></label>
+      <label><input type="radio" name="type" value="in"><span>Einnahme</span></label>
+    </div>
+    <div><label for="amount">Betrag in €</label><input id="amount" type="number" step="0.01" min="0.01" required inputmode="decimal"></div>
+    <div><label for="date">Datum</label><input id="date" type="date" required></div>
+    <div><label for="cat">Kategorie</label><select id="cat"></select></div>
+    <div><label for="note">Notiz</label><input id="note" type="text" maxlength="60"></div>
+    <button class="add full" type="submit">Buchung speichern</button>
+  </form>
+</section>
+
+<section>
+  <h2>Ausgaben nach Kategorie</h2>
+  <div id="cats"></div>
+</section>
+
+<section>
+  <h2>Buchungen</h2>
+  <ul id="list"></ul>
+</section>
+</main>
+
+<script>
+(function(){
+  var CATS={out:["Wohnen","Lebensmittel","Mobilität","Freizeit","Versicherung","Gesundheit","Sonstiges"],in:["Gehalt","Nebenverdienst","Erstattung","Sonstiges"]};
+  var items=[];
+  var cur=new Date();cur=new Date(cur.getFullYear(),cur.getMonth(),1);
+  var $=function(id){return document.getElementById(id)};
+  var eur=new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR"});
+  var mfmt=new Intl.DateTimeFormat("de-DE",{month:"long",year:"numeric"});
+  var dfmt=new Intl.DateTimeFormat("de-DE",{day:"2-digit",month:"2-digit"});
+
+  function ym(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")}
+  function today(){var t=new Date();return ym(t)+"-"+String(t.getDate()).padStart(2,"0")}
+  function type(){return document.querySelector('input[name="type"]:checked').value}
+  function showError(msg){var e=$("err");e.textContent=msg||"";e.hidden=!msg}
+  function api(path,opts){
+    return fetch("/api/"+path,opts).then(function(r){
+      if(!r.ok)throw new Error("Anfrage fehlgeschlagen ("+r.status+")");
+      return r.status===204?null:r.json();
+    });
+  }
+  function load(){
+    $("monthLabel").textContent=mfmt.format(cur);
+    return api("transactions?month="+ym(cur)).then(function(rows){items=rows;showError("");render()})
+      .catch(function(){showError("Der Server ist nicht erreichbar. Prüfe, ob alle Container laufen.")});
+  }
+  function fillCats(){
+    var s=$("cat");s.innerHTML="";
+    CATS[type()].forEach(function(c){var o=document.createElement("option");o.textContent=c;s.appendChild(o)});
+  }
+  function render(){
+    var inn=0,out=0,byCat={};
+    items.forEach(function(x){if(x.type==="in")inn+=x.amount;else{out+=x.amount;byCat[x.category]=(byCat[x.category]||0)+x.amount}});
+    $("sumIn").textContent=eur.format(inn);$("sumOut").textContent=eur.format(out);$("saldo").textContent=eur.format(inn-out);
+
+    var cats=$("cats");cats.innerHTML="";
+    var names=Object.keys(byCat).sort(function(a,b){return byCat[b]-byCat[a]});
+    if(!names.length){var p=document.createElement("p");p.className="empty";p.textContent="Noch keine Ausgaben in diesem Monat.";cats.appendChild(p)}
+    names.forEach(function(n){
+      var r=document.createElement("div");r.className="bar";
+      var a=document.createElement("span");a.textContent=n;
+      var t=document.createElement("div");t.className="track";
+      var f=document.createElement("div");f.className="fill";f.style.width=(byCat[n]/out*100)+"%";t.appendChild(f);
+      var v=document.createElement("span");v.className="amt";v.textContent=eur.format(byCat[n]);
+      r.appendChild(a);r.appendChild(t);r.appendChild(v);cats.appendChild(r);
+    });
+
+    var ul=$("list");ul.innerHTML="";
+    if(!items.length){var li=document.createElement("li");li.style.display="block";li.className="empty";li.textContent="Keine Buchungen. Trage oben deine erste Einnahme oder Ausgabe ein.";ul.appendChild(li)}
+    items.forEach(function(x){
+      var li=document.createElement("li");
+      var d=document.createElement("div");
+      d.textContent=x.category;
+      var sm=document.createElement("small");
+      sm.textContent=dfmt.format(new Date(x.date+"T00:00:00"))+(x.note?" – "+x.note:"");
+      d.appendChild(sm);
+      var a=document.createElement("span");a.className="amt "+x.type;
+      a.textContent=(x.type==="in"?"+":"−")+eur.format(x.amount);
+      var b=document.createElement("button");b.className="del";b.textContent="Löschen";b.setAttribute("aria-label","Buchung löschen: "+x.category);
+      b.onclick=function(){api("transactions/"+x.id,{method:"DELETE"}).then(load).catch(function(){showError("Löschen fehlgeschlagen.")})};
+      li.appendChild(d);li.appendChild(a);li.appendChild(b);ul.appendChild(li);
+    });
+  }
+  $("prev").onclick=function(){cur=new Date(cur.getFullYear(),cur.getMonth()-1,1);load()};
+  $("next").onclick=function(){cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);load()};
+  document.querySelectorAll('input[name="type"]').forEach(function(r){r.onchange=fillCats});
+  $("f").addEventListener("submit",function(e){
+    e.preventDefault();
+    var amt=parseFloat($("amount").value);
+    if(!(amt>0))return;
+    var d=$("date").value;
+    api("transactions",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({type:type(),amount:amt,category:$("cat").value,date:d,note:$("note").value.trim()})})
+    .then(function(){
+      cur=new Date(d.slice(0,4),parseInt(d.slice(5,7),10)-1,1);
+      $("amount").value="";$("note").value="";
+      return load();
+    }).then(function(){$("amount").focus()})
+    .catch(function(){showError("Speichern fehlgeschlagen.")});
+  });
+  $("date").value=today();
+  fillCats();load();
+})();
+</script>
+</body>
+</html>
