@@ -205,7 +205,8 @@ Weitere Befehle in `frontend/`:
 - `npm run preview`: den Produktions-Build lokal ansehen
 
 Nach Änderungen am Backend (`backend/`) das Backend neu bauen:
-`podman compose up -d --build backend`.
+`podman compose up -d --build backend`. Das Frontend muss dafür nicht neu starten: nginx löst den
+Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neuer IP-Adresse.
 
 ## Tests
 Die Unit-Tests für den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
@@ -228,7 +229,7 @@ Die Testdateien enthalten nur erfundene Daten.
 └── frontend/
     ├── index.html            Vite-Einstiegspunkt
     ├── vite.config.ts        Vite-Konfiguration inkl. Dev-Proxy für /api
-    ├── nginx.conf            nginx: liefert die App aus und leitet /api ans Backend
+    ├── nginx.conf.template   nginx: liefert die App aus und leitet /api ans Backend
     ├── Dockerfile            Build mit Node, Auslieferung mit nginx
     └── src/
         ├── main.tsx          Einstieg, rendert <App />

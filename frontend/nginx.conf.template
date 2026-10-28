@@ -1,0 +1,25 @@
+# Vorlage: Beim Start des Containers setzt das nginx-Image ${NGINX_LOCAL_RESOLVERS} ein
+# (DNS-Server aus /etc/resolv.conf, unter Docker und Podman verschieden).
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Den Namen "backend" regelmäßig neu auflösen. Ohne das merkt sich nginx die IP vom Start und
+  # erreicht das Backend nicht mehr, wenn dessen Container neu erstellt wird und eine neue IP bekommt.
+  resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+
+  location /api/ {
+    # CSV-Import: Das Backend erlaubt 5 MB, hier etwas Luft, damit dessen Fehlermeldung ankommt
+    client_max_body_size 6m;
+    # Über eine Variable löst nginx den Namen bei Bedarf neu auf; der Pfad wird unverändert weitergegeben
+    set $backend http://backend:3000;
+    proxy_pass $backend;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+  }
+
+  location / {
+    try_files $uri /index.html;
+  }
+}
