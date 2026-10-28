@@ -1,0 +1,28 @@
+{
+  "name": "CSV-CAMT V8",
+  "description": "Kontoumsätze im Format CSV-CAMT V8, wie es z. B. das Online-Banking der Sparkassen exportiert.",
+  "encoding": ["utf-8", "windows-1252"],
+  "delimiter": ";",
+  "skipLines": 0,
+  "dateFormats": ["DD.MM.YY", "DD.MM.YYYY"],
+  "decimalSeparator": ",",
+  "thousandsSeparator": ".",
+  "columns": {
+    "account": "Auftragskonto",
+    "date": "Buchungstag",
+    "valueDate": "Valutadatum",
+    "bookingText": "Buchungstext",
+    "purpose": "Verwendungszweck",
+    "creditorId": "Glaeubiger ID",
+    "mandateReference": "Mandatsreferenz",
+    "endToEndReference": "Kundenreferenz (End-to-End)",
+    "counterparty": "Beguenstigter/Zahlungspflichtiger",
+    "counterpartyIban": "Kontonummer/IBAN",
+    "counterpartyBic": "BIC (SWIFT-Code)",
+    "amount": "Betrag",
+    "currency": "Waehrung"
+  },
+  "skipRows": [
+    { "column": "Info", "equals": "Umsatz vorgemerkt", "reason": "Vorgemerkter Umsatz (noch nicht gebucht)" }
+  ]
+}

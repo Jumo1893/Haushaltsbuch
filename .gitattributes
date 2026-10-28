@@ -1,0 +1,2 @@
+# Testdateien byte-genau einchecken (Kodierung Windows-1252, Zeilenenden CRLF)
+backend/test/fixtures/*.csv -text
