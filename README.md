@@ -112,14 +112,17 @@ Unter „Umsätze importieren“ lassen sich Kontoumsätze aus einer CSV-Datei �
 Regeln:
 - **Buchungen:** Jeder gültige Datensatz wird eine Buchung in der Kategorie „Sonstiges“, mit negativem Betrag
   als Ausgabe, mit positivem als Einnahme. Gegenpartei und Verwendungszweck werden mitgespeichert und in der
-  Buchungsliste angezeigt, weitere Angaben (z. B. IBAN, Buchungstext) in der Spalte `details`.
-- **Fehlerhafte Zeilen** (z. B. ungültiges Datum, unlesbarer Betrag, Betrag 0, andere Währung als EUR) werden
-  nicht übernommen, alle gültigen Zeilen schon.
+  Buchungsliste angezeigt, weitere Angaben (z. B. IBAN, Buchungstext, ISIN) in der Spalte `details`.
+  Stehen Gebühr und Steuer in eigenen Spalten, sind sie im Betrag der Buchung enthalten.
+- **Fehlerhafte Zeilen** (z. B. ungültiges Datum, unlesbarer Betrag, andere Währung als EUR) werden nicht
+  übernommen, alle gültigen Zeilen schon.
+- **Zeilen ohne Geldbewegung** (Betrag leer oder 0,00, z. B. ein Aktiensplit) werden ausgelassen.
 - **Duplikate:** Ein Umsatz gilt als bereits importiert, wenn eigenes Konto, Buchungstag, Betrag, Gegenpartei
   (Name und IBAN) und Verwendungszweck mit einem früher importierten Umsatz übereinstimmen (Groß-/Kleinschreibung
-  und Leerzeichen zählen nicht). Duplikate werden standardmäßig übersprungen, lassen sich in der Vorschau aber
-  trotzdem importieren. Stehen gleiche Umsätze mehrfach in einer Datei (z. B. zwei gleiche Einkäufe am selben Tag),
-  gelten nur so viele als Duplikat, wie schon gespeichert sind. Von Hand erfasste Buchungen werden nicht verglichen.
+  und Leerzeichen zählen nicht). Liefert das Format eine eindeutige Transaktions-ID (Trade Republic), zählt
+  stattdessen nur sie. Duplikate werden standardmäßig übersprungen, lassen sich in der Vorschau aber trotzdem
+  importieren. Stehen gleiche Umsätze mehrfach in einer Datei (z. B. zwei gleiche Einkäufe am selben Tag), gelten
+  nur so viele als Duplikat, wie schon gespeichert sind. Von Hand erfasste Buchungen werden nicht verglichen.
 - **Vorgemerkte Umsätze** (noch nicht gebucht) lässt das Profil CSV-CAMT V8 aus. Sie kommen mit einem späteren
   Export, sobald sie gebucht sind.
 - **Herkunft:** Jeder Import wird in der Tabelle `imports` festgehalten (Profil, Dateiname, Anzahlen), jede
@@ -133,10 +136,10 @@ Regeln:
 | Profil      | Datei in `backend/import-profiles/` | Beschreibung |
 |-------------|-------------------------------------|--------------|
 | CSV-CAMT V8 | `csv-camt-v8.json` | Export „CSV-CAMT V8“, z. B. aus dem Online-Banking der Sparkassen. Trennzeichen `;`, Datum `TT.MM.JJ` oder `TT.MM.JJJJ`, Dezimalkomma, Kodierung UTF-8 oder Windows-1252 |
+| Trade Republic | `trade-republic.json` | Transaktionsexport aus der Trade-Republic-App (Spalten `datetime`, `date`, `account_type`, … `mcc_code`). Trennzeichen `,`, Datum `JJJJ-MM-TT`, Dezimalpunkt, UTF-8. Übernimmt alle Geldbewegungen: Kartenzahlungen, Überweisungen, Zinsen, Ausschüttungen, Steuern sowie Käufe und Verkäufe (inklusive Sparpläne). Betrag = `amount` + `fee` + `tax`, Duplikate über `transaction_id` |
 
-Eine Beispieldatei mit erfundenen Daten (inklusive fehlerhafter Zeilen) liegt unter
-`backend/test/fixtures/csv-camt-v8.csv`. Sie ist für Tests gedacht: Importiert landen ihre Umsätze
-wie echte Buchungen in der Datenbank.
+Beispieldateien mit erfundenen Daten (inklusive fehlerhafter Zeilen) liegen unter `backend/test/fixtures/`.
+Sie sind für Tests gedacht: Importiert landen ihre Umsätze wie echte Buchungen in der Datenbank.
 
 ### Neues Importprofil anlegen
 Ein Importprofil ist eine JSON-Datei in `backend/import-profiles/`. Für ein neues Institut genügt eine neue
@@ -154,7 +157,7 @@ im Log (`podman compose logs backend`) nennt den Grund. Vorlage: `csv-camt-v8.js
 | `dateFormats`        | ja      | Liste von Datumsformaten aus `DD`, `MM`, `YYYY` oder `YY` (gelesen als 20YY) und Trennzeichen, z. B. `DD.MM.YYYY` |
 | `decimalSeparator`   | ja      | `,` oder `.` |
 | `thousandsSeparator` | nein    | `.`, `,`, `'`, Leerzeichen oder leer (Standard: keins) |
-| `columns`            | ja      | Zuordnung Feld der App → Spaltenname in der Datei, siehe unten |
+| `columns`            | ja      | Zuordnung Feld der App → Spaltenname in der Datei, siehe unten. Statt eines Namens geht auch eine Liste, dann gilt die erste nicht leere Spalte (z. B. `["counterparty_name", "name"]`) |
 | `skipRows`           | nein    | Zeilen, die ausgelassen werden: `{ "column": "...", "equals": "...", "reason": "..." }` |
 
 Felder für `columns` (Pflicht sind `date` und `amount`):
@@ -163,15 +166,22 @@ Felder für `columns` (Pflicht sind `date` und `amount`):
 |------|-----------|----------------|
 | `date` | Buchungstag | `date` |
 | `amount` | Betrag mit Vorzeichen, negativ = Ausgabe | `type`, `amount` |
+| `fee`, `tax` | Gebühr und Steuer mit Vorzeichen, werden zum Betrag addiert | `type`, `amount`, `details` |
 | `currency` | Währung, nur EUR wird übernommen (leer gilt als EUR) | – |
 | `counterparty` | Name der Gegenpartei | `counterparty` |
 | `purpose` | Verwendungszweck | `purpose` |
+| `transactionId` | eindeutige ID der Bank, ersetzt bei der Duplikaterkennung alle anderen Merkmale | `details` |
 | `account` | eigenes Konto (IBAN) | `details` |
 | `valueDate` | Valutadatum | `details` |
-| `bookingText` | Buchungstext, z. B. LASTSCHRIFT | `details` |
+| `bookingText` | Buchungstext oder Art der Buchung, z. B. LASTSCHRIFT oder BUY | `details` |
 | `counterpartyIban`, `counterpartyBic` | IBAN und BIC der Gegenpartei | `details` |
-| `creditorId`, `mandateReference`, `endToEndReference` | Gläubiger-ID, Mandatsreferenz, End-to-End-Referenz | `details` |
+| `creditorId`, `mandateReference`, `endToEndReference`, `paymentReference` | Gläubiger-ID, Mandatsreferenz, End-to-End-Referenz, Zahlungsreferenz | `details` |
+| `mcc` | Händlerkategorie (Merchant Category Code) bei Kartenzahlungen | `details` |
+| `isin`, `assetClass` | Wertpapier und Anlageklasse, z. B. FUND | `details` |
+| `shares`, `price` | Stückzahl und Kurs (Zahlen, beliebig viele Nachkommastellen) | `details` |
+| `originalAmount`, `originalCurrency`, `fxRate` | Betrag in Fremdwährung, Währung und Wechselkurs | `details` |
 
+Beträge dürfen mehr als zwei Nachkommastellen haben, wenn diese 0 sind (z. B. `-99.000000`).
 Alle Spalten aus `columns` und `skipRows` müssen in der Kopfzeile der Datei stehen (Groß-/Kleinschreibung
 egal), sonst bricht der Import ab und zeigt die erwarteten und gefundenen Spalten. Weitere Spalten werden ignoriert.
 
@@ -272,7 +282,7 @@ Ein Eintrag je Importvorgang.
 | `file_name`      | `TEXT`        | Name der hochgeladenen Datei (die Datei selbst wird nicht gespeichert) |
 | `imported_count` | `INTEGER`     | übernommene Datensätze |
 | `duplicate_count` | `INTEGER`    | übersprungene Duplikate |
-| `skipped_count`  | `INTEGER`     | durch eine Regel des Profils ausgelassen, z. B. vorgemerkte Umsätze |
+| `skipped_count`  | `INTEGER`     | ausgelassen, z. B. vorgemerkte Umsätze oder Zeilen ohne Geldbewegung |
 | `invalid_count`  | `INTEGER`     | fehlerhafte Zeilen |
 | `created_at`     | `TIMESTAMPTZ` | Zeitpunkt des Imports |
 

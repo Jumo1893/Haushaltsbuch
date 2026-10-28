@@ -3,18 +3,22 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { compileDateFormat, compileAmountFormat } = require("./values");
+const { compileDateFormat, compileAmountFormat, compileNumberFormat } = require("./values");
 
 /**
  * Felder der App, denen ein Profil Spalten zuordnen kann.
- * `detail`: wird nicht als eigene Spalte, sondern in transactions.details (JSON) gespeichert.
+ * - type "amount": Beträge aller Amount-Felder (Betrag, Gebühr, Steuer) ergeben zusammen den Buchungsbetrag
+ * - detail: wird nicht als eigene Spalte, sondern in transactions.details (JSON) gespeichert
  */
 const FIELDS = {
   date: { type: "date", required: true },
   amount: { type: "amount", required: true },
+  fee: { type: "amount", detail: true },
+  tax: { type: "amount", detail: true },
   currency: { type: "currency" },
   counterparty: { type: "text" },
   purpose: { type: "text" },
+  transactionId: { type: "text", detail: true },
   account: { type: "text", detail: true },
   valueDate: { type: "date", detail: true },
   bookingText: { type: "text", detail: true },
@@ -23,6 +27,15 @@ const FIELDS = {
   creditorId: { type: "text", detail: true },
   mandateReference: { type: "text", detail: true },
   endToEndReference: { type: "text", detail: true },
+  paymentReference: { type: "text", detail: true },
+  mcc: { type: "text", detail: true },
+  isin: { type: "text", detail: true },
+  assetClass: { type: "text", detail: true },
+  shares: { type: "number", detail: true },
+  price: { type: "number", detail: true },
+  originalAmount: { type: "number", detail: true },
+  originalCurrency: { type: "text", detail: true },
+  fxRate: { type: "number", detail: true },
 };
 
 const KEYS = [
@@ -69,12 +82,15 @@ function compileProfile(id, raw) {
   if (!["", ".", ",", " ", "'"].includes(thousandsSeparator) || thousandsSeparator === decimalSeparator)
     fail("„thousandsSeparator“ muss leer, „.“, „,“, „'“ oder ein Leerzeichen sein und sich vom Dezimaltrennzeichen unterscheiden");
 
+  // Ein Feld kann eine Spalte oder eine Liste von Spalten haben; dann gilt die erste nicht leere.
   const mapping = raw.columns;
   if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) fail("„columns“ fehlt");
-  for (const [field, column] of Object.entries(mapping)) {
+  const fields = Object.entries(mapping).map(([field, value]) => {
     if (!FIELDS[field]) fail(`unbekanntes Feld „${field}“ in „columns“ (bekannt: ${Object.keys(FIELDS).join(", ")})`);
-    if (!isText(column)) fail(`Spaltenname für „${field}“ fehlt`);
-  }
+    const columns = [].concat(value);
+    if (!columns.length || !columns.every(isText)) fail(`Spaltenname für „${field}“ fehlt`);
+    return { field, columns, ...FIELDS[field] };
+  });
   for (const [field, def] of Object.entries(FIELDS))
     if (def.required && !mapping[field]) fail(`Pflichtfeld „${field}“ fehlt in „columns“`);
 
@@ -84,7 +100,6 @@ function compileProfile(id, raw) {
     if (!rule || !isText(rule.column) || typeof rule.equals !== "string" || !isText(rule.reason))
       fail("Jede Regel in „skipRows“ braucht „column“, „equals“ und „reason“");
 
-  const columns = Object.entries(mapping).map(([field, column]) => ({ field, column, ...FIELDS[field] }));
   return {
     id,
     name: raw.name.trim(),
@@ -92,10 +107,10 @@ function compileProfile(id, raw) {
     encodings,
     delimiter,
     skipLines,
-    columns,
+    fields,
     skipRows: skipRows.map(({ column, equals, reason }) => ({ column, equals, reason })),
     /** Spalten, die in der Datei vorhanden sein müssen */
-    expectedColumns: [...new Set([...columns.map((c) => c.column), ...skipRows.map((r) => r.column)])],
+    expectedColumns: [...new Set([...fields.flatMap((f) => f.columns), ...skipRows.map((r) => r.column)])],
     parseDate: (value) => {
       for (const parse of dateParsers) {
         const iso = parse(value);
@@ -104,6 +119,7 @@ function compileProfile(id, raw) {
       return null;
     },
     parseAmount: compileAmountFormat(decimalSeparator, thousandsSeparator),
+    parseNumber: compileNumberFormat(decimalSeparator, thousandsSeparator),
   };
 }
 
@@ -112,9 +128,11 @@ function loadProfiles(dir) {
   const profiles = new Map();
   for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
     const id = path.basename(file, ".json");
+    const text = fs.readFileSync(path.join(dir, file), "utf8");
     let raw;
     try {
-      raw = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8").replace(/^﻿/, ""));
+      // Ein BOM (z. B. von Windows-Editoren) vor dem JSON überspringen
+      raw = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
     } catch (e) {
       throw new ProfileError(`Importprofil „${id}“: kein gültiges JSON (${e.message})`);
     }

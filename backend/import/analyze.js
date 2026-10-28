@@ -24,7 +24,7 @@ const quote = (s) => `„${s.length > 40 ? `${s.slice(0, 40)}…` : s}“`;
  * Liest die Datei und liefert je Datenzeile ein Ergebnis:
  * - { line, status: "new", record }     gültiger Umsatz (Duplikate markiert erst markDuplicates)
  * - { line, status: "invalid", reason } fehlerhafte Zeile
- * - { line, status: "skipped", reason } durch eine Regel des Profils ausgelassen
+ * - { line, status: "skipped", reason } ausgelassen: Regel des Profils oder keine Geldbewegung
  * Passt die ganze Datei nicht (Kodierung, Aufbau, Spalten), wird ein ImportError geworfen.
  */
 function analyzeFile(buffer, profile, { maxRows = MAX_ROWS } = {}) {
@@ -78,6 +78,14 @@ function readRow({ line, fields }, profile, index, width) {
     return invalid(`Die Zeile hat ${fields.length} statt ${width} Spalten.`);
   }
   const cell = (column) => cleanText(fields[index.get(column)]);
+  /** Wert eines Feldes: die erste nicht leere seiner Spalten */
+  const pick = (columns) => {
+    for (const column of columns) {
+      const value = cell(column);
+      if (value) return { value, column };
+    }
+    return { value: "", column: columns[0] };
+  };
 
   for (const rule of profile.skipRows) {
     if (cell(rule.column).toLowerCase() === normalize(rule.equals)) return { line, status: "skipped", reason: rule.reason };
@@ -85,45 +93,56 @@ function readRow({ line, fields }, profile, index, width) {
 
   const errors = [];
   const record = { date: "", cents: 0, counterparty: "", purpose: "", details: {} };
-  const set = (col, value) => {
-    if (!col.detail) record[col.field] = value;
-    else if (value) record.details[col.field] = value;
+  const set = (f, value) => {
+    if (f.detail) record.details[f.field] = value;
+    else record[f.field] = value;
   };
 
-  for (const col of profile.columns) {
-    const value = cell(col.column);
+  for (const f of profile.fields) {
+    const { value, column } = pick(f.columns);
     if (!value) {
-      if (col.required) errors.push(`Spalte „${col.column}“ ist leer`);
+      if (f.required && f.type !== "amount") errors.push(`Spalte „${column}“ ist leer`);
       continue;
     }
-    if (col.type === "date") {
+    if (f.type === "date") {
       const iso = profile.parseDate(value);
-      if (iso) set(col, iso);
-      else errors.push(`Ungültiges Datum ${quote(value)} in Spalte „${col.column}“`);
-    } else if (col.type === "amount") {
+      if (iso) set(f, iso);
+      else errors.push(`Ungültiges Datum ${quote(value)} in Spalte „${column}“`);
+    } else if (f.type === "amount") {
+      // Betrag, Gebühr und Steuer ergeben zusammen den Buchungsbetrag
       const cents = profile.parseAmount(value);
-      if (cents === null) errors.push(`Unlesbarer Betrag ${quote(value)} in Spalte „${col.column}“`);
-      else if (cents === 0) errors.push("Der Betrag ist 0,00");
-      else if (Math.abs(cents) >= 1e12) errors.push(`Der Betrag ${quote(value)} ist zu groß`);
-      else record.cents = cents;
-    } else if (col.type === "currency") {
+      if (cents === null) errors.push(`Unlesbarer Betrag ${quote(value)} in Spalte „${column}“`);
+      else {
+        record.cents += cents;
+        if (f.detail && cents) set(f, cents / 100);
+      }
+    } else if (f.type === "number") {
+      const number = profile.parseNumber(value);
+      if (number === null) errors.push(`Ungültige Zahl ${quote(value)} in Spalte „${column}“`);
+      else set(f, number);
+    } else if (f.type === "currency") {
       if (value.toUpperCase() !== "EUR") errors.push(`Währung ${quote(value)} wird nicht unterstützt, nur EUR`);
     } else {
-      set(col, neutralizeFormula(value));
+      set(f, neutralizeFormula(value));
     }
   }
 
   if (errors.length) return invalid(errors.join("; "));
+  if (record.cents === 0) return { line, status: "skipped", reason: "Keine Geldbewegung (Betrag leer oder 0,00)" };
+  if (Math.abs(record.cents) >= 1e12) return invalid("Der Betrag ist zu groß");
   record.hash = fingerprint(record);
   return { line, status: "new", record };
 }
 
 /**
- * Fingerabdruck, an dem ein bereits importierter Umsatz wiedererkannt wird:
- * eigenes Konto, Buchungstag, Betrag, Gegenpartei (Name und IBAN) und Verwendungszweck.
+ * Fingerabdruck, an dem ein bereits importierter Umsatz wiedererkannt wird. Liefert das Format eine
+ * Transaktions-ID, genügt sie. Sonst zählen eigenes Konto, Buchungstag, Betrag, Gegenpartei (Name und IBAN)
+ * und Verwendungszweck.
  */
 function fingerprint(r) {
-  const parts = [r.details.account, r.date, r.cents, r.counterparty, r.details.counterpartyIban, r.purpose];
+  const parts = r.details.transactionId
+    ? ["transaction-id", r.details.transactionId]
+    : [r.details.account, r.date, r.cents, r.counterparty, r.details.counterpartyIban, r.purpose];
   const key = parts.map((p) => normalize(String(p ?? ""))).join("\u001f");
   return crypto.createHash("sha256").update(key).digest("hex");
 }

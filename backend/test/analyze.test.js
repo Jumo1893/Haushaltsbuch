@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { parseCsv } = require("../import/csv");
 const { loadProfiles, compileProfile } = require("../import/profiles");
 const { ImportError, analyzeFile, markDuplicates, countStatuses, buildPreview } = require("../import/analyze");
 
@@ -112,19 +113,29 @@ test("Datei: zu viele Datensätze", () => {
   assert.equal(analyzeFile(csv(lines), simple, { maxRows: 4 }).length, 4);
 });
 
-test("Zeilen: falsche Spaltenzahl, fehlende Pflichtwerte, Betrag 0", () => {
+test("Zeilen: falsche Spaltenzahl, fehlende Pflichtwerte, keine Geldbewegung", () => {
   const rows = analyzeFile(
-    csv(["Datum;Betrag;Name;Zweck", "01.02.2026;-1,00;X", "01.02.2026;-1,00;X;Y;;", ";;X;Y", "01.02.2026;0,00;X;Y", "01.02.2026;-1,00;X;Y;Z"]),
+    csv([
+      "Datum;Betrag;Name;Zweck",
+      "01.02.2026;-1,00;X",
+      "01.02.2026;-1,00;X;Y;;",
+      ";-1,00;X;Y",
+      "01.02.2026;0,00;X;Y",
+      "01.02.2026;;X;Y",
+      "01.02.2026;-1,00;X;Y;Z",
+    ]),
     simple,
   );
+  const none = "Keine Geldbewegung (Betrag leer oder 0,00)";
   assert.deepEqual(
     rows.map((r) => [r.line, r.status, r.reason]),
     [
       [2, "invalid", "Die Zeile hat 3 statt 4 Spalten."],
       [3, "new", undefined],
-      [4, "invalid", "Spalte „Datum“ ist leer; Spalte „Betrag“ ist leer"],
-      [5, "invalid", "Der Betrag ist 0,00"],
-      [6, "invalid", "Die Zeile hat 5 statt 4 Spalten."],
+      [4, "invalid", "Spalte „Datum“ ist leer"],
+      [5, "skipped", none],
+      [6, "skipped", none],
+      [7, "invalid", "Die Zeile hat 5 statt 4 Spalten."],
     ],
   );
 });
@@ -200,4 +211,87 @@ test("Vorschau: höchstens zehn Beispielzeilen", () => {
   const preview = buildPreview(markDuplicates(analyzeFile(csv(lines), simple), new Map()));
   assert.equal(preview.counts.new, 25);
   assert.equal(preview.sample.length, 10);
+});
+
+const tr = loadProfiles(path.join(__dirname, "..", "import-profiles")).get("trade-republic");
+const trFixture = fs.readFileSync(path.join(__dirname, "fixtures", "trade-republic.csv"));
+
+test("Trade Republic: Beispieldatei wird vollständig gelesen", () => {
+  const rows = analyzeFile(trFixture, tr);
+  assert.deepEqual(countStatuses(rows), { total: 14, new: 11, duplicate: 0, skipped: 1, invalid: 2 });
+  const lines = byLine(rows);
+  assert.deepEqual(lines[11], { line: 11, status: "skipped", reason: "Keine Geldbewegung (Betrag leer oder 0,00)" });
+  assert.equal(lines[13].reason, "Unlesbarer Betrag „-1.234567“ in Spalte „amount“");
+  assert.equal(lines[14].reason, "Ungültiges Datum „2026-02-30“ in Spalte „date“");
+});
+
+test("Trade Republic: Gebühren und Steuern sind im Buchungsbetrag enthalten", () => {
+  const lines = byLine(analyzeFile(trFixture, tr));
+  assert.equal(lines[2].record.cents, -480, "Kartenzahlung");
+  assert.equal(lines[4].record.cents, -20100, "Kauf: -200,00 Betrag und -1,00 Gebühr");
+  assert.equal(lines[5].record.cents, 57620, "Verkauf: 602,50 - 1,00 Gebühr - 25,30 Steuer");
+  assert.equal(lines[6].record.cents, 24, "Ausschüttung: 0,30 - 0,06 Steuer");
+  assert.equal(lines[7].record.cents, 230, "Zinsen: 3,12 - 0,82 Steuer");
+  assert.equal(lines[8].record.cents, -296, "Vorabpauschale: Betrag 0, Steuer -2,96");
+  assert.equal(lines[15].record.cents, -230, "Storno der Zinsen");
+  assert.deepEqual([lines[5].record.details.fee, lines[5].record.details.tax], [-1, -25.3]);
+});
+
+test("Trade Republic: Wertpapier- und Fremdwährungsangaben landen in details", () => {
+  const lines = byLine(analyzeFile(trFixture, tr));
+  assert.deepEqual(lines[4].record.details, {
+    fee: -1,
+    transactionId: "00000000-0000-4000-8000-000000000003",
+    bookingText: "BUY",
+    isin: "IE00MUSTER02",
+    assetClass: "FUND",
+    shares: 2.123456,
+    price: 94.19,
+  });
+  assert.equal(lines[4].record.counterparty, "Muster Welt ETF (Acc)");
+  const { details } = lines[3].record;
+  assert.deepEqual([details.originalAmount, details.originalCurrency, details.fxRate, details.mcc], [-19.99, "USD", 1.0834, "5999"]);
+  assert.equal(lines[5].record.details.shares, -5);
+});
+
+test("Trade Republic: Gegenpartei und Verwendungszweck mit Ausweichspalten", () => {
+  const lines = byLine(analyzeFile(trFixture, tr));
+  assert.equal(lines[2].record.counterparty, "Bäckerei Schön", "ohne counterparty_name gilt name");
+  assert.equal(lines[9].record.counterparty, "Erika Mustermann");
+  assert.equal(lines[9].record.purpose, "Rückzahlung Konzertkarten, danke!", "Komma in Anführungszeichen");
+  assert.equal(lines[10].record.counterparty, "Max Mustermann");
+  assert.equal(lines[10].record.purpose, "Umbuchung aufs Girokonto", "ohne description gilt payment_reference");
+  assert.equal(lines[10].record.details.counterpartyIban, "DE00123456780000000001");
+  assert.equal(lines[7].record.purpose, "INTEREST_PAYMENT", "ohne Text gilt die Buchungsart");
+  assert.equal(lines[4].record.purpose, "BUY");
+  assert.equal(lines[12].record.counterparty, `'=HYPERLINK("http://example.invalid","Gewinn")`);
+});
+
+test("Trade Republic: Duplikate werden an der Transaktions-ID erkannt", () => {
+  const header = trFixture.toString("utf8").split("\n")[0];
+  const line = (id, description) =>
+    `"2026-10-27T16:42:10Z","2026-10-27","DEFAULT","CARD","CARD_TRANSACTION","","Kiosk","","","","-2.500000","","","EUR","","","","${description}","${id}","","","",""`;
+  const hash = (id, description) => analyzeFile(csv([header, line(id, description)]), tr)[0].record.hash;
+  assert.equal(hash("id-1", "Kiosk"), hash("id-1", "Kiosk am Bahnhof"), "gleiche ID, anderer Text");
+  assert.notEqual(hash("id-1", "Kiosk"), hash("id-2", "Kiosk"), "gleicher Inhalt, andere ID");
+
+  const rows = analyzeFile(trFixture, tr);
+  markDuplicates(rows, new Map([[byLine(rows)[4].record.hash, 1]]));
+  assert.equal(byLine(rows)[4].status, "duplicate");
+  assert.equal(countStatuses(rows).duplicate, 1);
+});
+
+test("Trade Republic: Datei ohne Anführungszeichen wird genauso gelesen", () => {
+  // Zeilen, deren Felder Komma oder Anführungszeichen enthalten, ließen sich ohne Anführungszeichen nicht schreiben
+  const plain = parseCsv(trFixture.toString("utf8"), ",").filter((r) => r.fields.every((f) => !/[",]/.test(f)));
+  const rows = analyzeFile(Buffer.from(plain.map((r) => r.fields.join(",")).join("\n"), "utf8"), tr);
+  assert.equal(rows.length, plain.length - 1);
+
+  const quoted = analyzeFile(trFixture, tr).filter((r) => r.record);
+  const valid = rows.filter((r) => r.record);
+  assert.ok(valid.length >= 9);
+  for (const row of valid) {
+    const same = quoted.find((q) => q.record.details.transactionId === row.record.details.transactionId);
+    assert.deepEqual(row.record, same.record);
+  }
 });

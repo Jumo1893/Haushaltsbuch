@@ -22,6 +22,21 @@ test("die mitgelieferten Profile sind gültig", () => {
   }
 });
 
+test("das mitgelieferte Trade-Republic-Profil erwartet alle zugeordneten Spalten", () => {
+  const tr = loadProfiles(path.join(__dirname, "..", "import-profiles")).get("trade-republic");
+  assert.ok(tr, "Profil trade-republic fehlt");
+  assert.equal(tr.delimiter, ",");
+  for (const column of ["date", "amount", "fee", "tax", "transaction_id", "counterparty_name", "name", "payment_reference", "mcc_code"]) {
+    assert.ok(tr.expectedColumns.includes(column), column);
+  }
+  assert.deepEqual(tr.fields.find((f) => f.field === "counterparty").columns, ["counterparty_name", "name"]);
+});
+
+test("ein Feld kann mehrere Spalten haben, alle gehören zu den erwarteten Spalten", () => {
+  const profile = compileProfile("testbank", { ...minimal(), columns: { date: "Datum", amount: "Betrag", counterparty: ["Empfänger", "Auftraggeber"] } });
+  assert.deepEqual(profile.expectedColumns, ["Datum", "Betrag", "Empfänger", "Auftraggeber"]);
+});
+
 test("ein minimales Profil wird mit Standardwerten ergänzt", () => {
   const profile = compileProfile("testbank", minimal());
   assert.equal(profile.description, "");
@@ -58,10 +73,12 @@ const invalid = {
   "ungültiges Datumsformat": { dateFormats: ["TT.MM.JJJJ"] },
   "ungültiges Dezimaltrennzeichen": { decimalSeparator: ";" },
   "gleiche Trennzeichen für Dezimal und Tausender": { thousandsSeparator: "," },
-  "unbekanntes Feld": { columns: { date: "Datum", amount: "Betrag", isin: "ISIN" } },
+  "unbekanntes Feld": { columns: { date: "Datum", amount: "Betrag", wkn: "WKN" } },
   "Pflichtfeld Datum fehlt": { columns: { amount: "Betrag" } },
   "Pflichtfeld Betrag fehlt": { columns: { date: "Datum" } },
   "leerer Spaltenname": { columns: { date: "Datum", amount: " " } },
+  "leere Spaltenliste": { columns: { date: "Datum", amount: "Betrag", purpose: [] } },
+  "leerer Name in Spaltenliste": { columns: { date: "Datum", amount: "Betrag", purpose: ["Zweck", ""] } },
   "unvollständige skipRows-Regel": { skipRows: [{ column: "Info" }] },
 };
 

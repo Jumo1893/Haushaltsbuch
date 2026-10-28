@@ -53,21 +53,38 @@ function compileDateFormat(format) {
   };
 }
 
-/**
- * Erzeugt eine Funktion, die einen Betrag wie "-1.234,56" in Cent umrechnet (-123456).
- * Tausendertrennzeichen sind optional, aber nur an den richtigen Stellen erlaubt;
- * höchstens zwei Nachkommastellen. Liefert null, wenn der Text kein Betrag ist.
- */
-function compileAmountFormat(decimalSeparator, thousandsSeparator) {
+/** Zahl mit Vorzeichen, Tausendertrennzeichen nur an den richtigen Stellen, Nachkommastellen optional */
+function numberPattern(decimalSeparator, thousandsSeparator) {
   const t = escapeRegExp(thousandsSeparator);
   const integer = thousandsSeparator ? `\\d{1,3}(?:${t}\\d{3})+|\\d+` : "\\d+";
-  const pattern = new RegExp(`^([+-]?)(${integer})(?:${escapeRegExp(decimalSeparator)}(\\d{1,2}))?$`);
+  return new RegExp(`^([+-]?)(${integer})(?:${escapeRegExp(decimalSeparator)}(\\d+))?$`);
+}
+
+/**
+ * Erzeugt eine Funktion, die einen Betrag wie "-1.234,56" in Cent umrechnet (-123456).
+ * Mehr als zwei Nachkommastellen sind nur erlaubt, wenn sie 0 sind (z. B. "-99.000000").
+ * Liefert null, wenn der Text kein Betrag ist.
+ */
+function compileAmountFormat(decimalSeparator, thousandsSeparator) {
+  const pattern = numberPattern(decimalSeparator, thousandsSeparator);
+  return (value) => {
+    const match = pattern.exec(value.trim());
+    const fraction = match?.[3] ?? "";
+    if (!match || /[^0]/.test(fraction.slice(2))) return null;
+    const euros = thousandsSeparator ? match[2].split(thousandsSeparator).join("") : match[2];
+    const cents = Number(euros) * 100 + Number(fraction.slice(0, 2).padEnd(2, "0"));
+    return match[1] === "-" ? -cents : cents;
+  };
+}
+
+/** Wie compileAmountFormat, aber für beliebige Zahlen wie Stückzahl oder Kurs. Liefert eine Zahl oder null. */
+function compileNumberFormat(decimalSeparator, thousandsSeparator) {
+  const pattern = numberPattern(decimalSeparator, thousandsSeparator);
   return (value) => {
     const match = pattern.exec(value.trim());
     if (!match) return null;
-    const euros = thousandsSeparator ? match[2].split(thousandsSeparator).join("") : match[2];
-    const cents = Number(euros) * 100 + Number((match[3] ?? "").padEnd(2, "0"));
-    return match[1] === "-" ? -cents : cents;
+    const integer = thousandsSeparator ? match[2].split(thousandsSeparator).join("") : match[2];
+    return Number(`${match[1]}${integer}.${match[3] ?? "0"}`);
   };
 }
 
@@ -80,4 +97,4 @@ const cleanText = (s) => s.replace(/[\u0000-\u001f\u007f-\u009f\s]+/g, " ").trim
  */
 const neutralizeFormula = (s) => (/^[=+\-@]/.test(s) ? `'${s}` : s);
 
-module.exports = { decode, compileDateFormat, compileAmountFormat, cleanText, neutralizeFormula };
+module.exports = { decode, compileDateFormat, compileAmountFormat, compileNumberFormat, cleanText, neutralizeFormula };

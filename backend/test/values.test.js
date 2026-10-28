@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { decode, compileDateFormat, compileAmountFormat, cleanText, neutralizeFormula } = require("../import/values");
+const {
+  decode,
+  compileDateFormat,
+  compileAmountFormat,
+  compileNumberFormat,
+  cleanText,
+  neutralizeFormula,
+} = require("../import/values");
 
 const cp1252 = (s) => Buffer.from(s, "latin1");
 const utf8 = (s) => Buffer.from(s, "utf8");
@@ -70,6 +77,25 @@ test("Betrag: ohne Tausendertrennzeichen", () => {
   const parse = compileAmountFormat(",", "");
   assert.equal(parse("1234,56"), 123456);
   assert.equal(parse("1.234,56"), null);
+});
+
+test("Betrag: weitere Nachkommastellen nur, wenn sie 0 sind", () => {
+  const parse = compileAmountFormat(".", "");
+  assert.equal(parse("-99.000000"), -9900);
+  assert.equal(parse("0.300000"), 30);
+  assert.equal(parse("12.340"), 1234);
+  assert.equal(parse("-1.234567"), null);
+  assert.equal(parse("0.001"), null);
+});
+
+test("Zahl: Stückzahl, Kurs und Wechselkurs mit beliebig vielen Nachkommastellen", () => {
+  const parse = compileNumberFormat(".", "");
+  assert.equal(parse("7.1236000000"), 7.1236);
+  assert.equal(parse("-100.0000000000"), -100);
+  assert.equal(parse("1.129300"), 1.1293);
+  assert.equal(parse("42"), 42);
+  for (const value of ["", "abc", "1,5", "1.2.3", "--1"]) assert.equal(parse(value), null, value);
+  assert.equal(compileNumberFormat(",", ".")("1.234,5"), 1234.5);
 });
 
 test("Betrag: unlesbare Werte", () => {

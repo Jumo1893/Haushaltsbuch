@@ -1,0 +1,29 @@
+{
+  "name": "Trade Republic",
+  "description": "Transaktionsexport aus der Trade-Republic-App. Übernimmt alle Geldbewegungen, auch Käufe und Verkäufe von Wertpapieren; Gebühren und Steuern sind im Betrag enthalten.",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "dateFormats": ["YYYY-MM-DD"],
+  "decimalSeparator": ".",
+  "columns": {
+    "date": "date",
+    "amount": "amount",
+    "fee": "fee",
+    "tax": "tax",
+    "currency": "currency",
+    "counterparty": ["counterparty_name", "name"],
+    "purpose": ["description", "payment_reference", "type"],
+    "transactionId": "transaction_id",
+    "bookingText": "type",
+    "counterpartyIban": "counterparty_iban",
+    "paymentReference": "payment_reference",
+    "mcc": "mcc_code",
+    "isin": "symbol",
+    "assetClass": "asset_class",
+    "shares": "shares",
+    "price": "price",
+    "originalAmount": "original_amount",
+    "originalCurrency": "original_currency",
+    "fxRate": "fx_rate"
+  }
+}
