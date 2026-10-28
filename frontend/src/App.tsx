@@ -7,6 +7,7 @@ import BalanceCard from "./components/BalanceCard";
 import TransactionForm from "./components/TransactionForm";
 import CategoryBreakdown from "./components/CategoryBreakdown";
 import TransactionList from "./components/TransactionList";
+import CsvImport from "./components/CsvImport";
 
 const firstOfThisMonth = () => {
   const d = new Date();
@@ -72,6 +73,11 @@ export default function App() {
       <section>
         <h2>Neue Buchung</h2>
         <TransactionForm onSubmit={handleAdd} />
+      </section>
+
+      <section>
+        <h2>Umsätze importieren</h2>
+        <CsvImport onImported={() => load(month)} />
       </section>
 
       <section>

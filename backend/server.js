@@ -1,36 +1,67 @@
+const path = require("node:path");
 const express = require("express");
 const { Pool } = require("pg");
+const { loadProfiles } = require("./import/profiles");
+const { createImportRouter } = require("./import/routes");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const profiles = loadProfiles(path.join(__dirname, "import-profiles"));
 const app = express();
 app.use(express.json());
 
 const SELECT = `SELECT id, type, amount::float8 AS amount, category,
-  to_char(date, 'YYYY-MM-DD') AS date, note FROM transactions`;
+  to_char(date, 'YYYY-MM-DD') AS date, note, counterparty, purpose, import_id AS "importId" FROM transactions`;
+
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS transactions (
+    id SERIAL PRIMARY KEY,
+    type TEXT NOT NULL CHECK (type IN ('in','out')),
+    amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+    category TEXT NOT NULL,
+    date DATE NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date)",
+  // Importvorgänge: welches Profil, welche Datei, was übernommen wurde
+  `CREATE TABLE IF NOT EXISTS imports (
+    id SERIAL PRIMARY KEY,
+    profile_id TEXT NOT NULL,
+    profile_name TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    imported_count INTEGER NOT NULL,
+    duplicate_count INTEGER NOT NULL,
+    skipped_count INTEGER NOT NULL,
+    invalid_count INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `ALTER TABLE transactions
+    ADD COLUMN IF NOT EXISTS counterparty TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS details JSONB,
+    ADD COLUMN IF NOT EXISTS import_id INTEGER REFERENCES imports(id),
+    ADD COLUMN IF NOT EXISTS import_hash TEXT`,
+  "CREATE INDEX IF NOT EXISTS idx_tx_import_id ON transactions(import_id)",
+  "CREATE INDEX IF NOT EXISTS idx_tx_import_hash ON transactions(import_hash)",
+];
 
 async function init() {
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; ; i++) {
     try {
-      await pool.query(`CREATE TABLE IF NOT EXISTS transactions (
-        id SERIAL PRIMARY KEY,
-        type TEXT NOT NULL CHECK (type IN ('in','out')),
-        amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
-        category TEXT NOT NULL,
-        date DATE NOT NULL,
-        note TEXT NOT NULL DEFAULT '',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )`);
-      await pool.query("CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date)");
-      return;
+      await pool.query("SELECT 1");
+      break;
     } catch (e) {
+      if (i === 19) throw new Error("Datenbank nicht erreichbar");
       console.log("Datenbank noch nicht bereit, neuer Versuch ...");
       await new Promise((r) => setTimeout(r, 1500));
     }
   }
-  throw new Error("Datenbank nicht erreichbar");
+  for (const statement of SCHEMA) await pool.query(statement);
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+app.use("/api", createImportRouter(pool, profiles));
 
 app.get("/api/transactions", async (req, res) => {
   const month = String(req.query.month || "");
