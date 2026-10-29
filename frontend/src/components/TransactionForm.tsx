@@ -11,6 +11,8 @@ const TYPES: [TxType, string][] = [
 interface Props {
   /** Vorhandene Buchung zum Bearbeiten; ohne wird eine neue Buchung erfasst. */
   initial?: NewTransaction;
+  /** Vorausgewähltes Konto für eine neue Buchung; ohne das erste der Liste */
+  defaultAccountId?: number | null;
   accounts: Account[];
   /** Legt ein Konto aus der Kontoauswahl heraus an. */
   onCreateAccount: (account: NewAccount) => Promise<Account>;
@@ -24,6 +26,7 @@ interface Props {
 
 export default function TransactionForm({
   initial,
+  defaultAccountId = null,
   accounts,
   onCreateAccount,
   lockBankData = false,
@@ -37,7 +40,7 @@ export default function TransactionForm({
   const [date, setDate] = useState(initial?.date ?? today);
   const [category, setCategory] = useState(initial?.category ?? CATEGORIES.out[0]);
   const [note, setNote] = useState(initial?.note ?? "");
-  const [accountId, setAccountId] = useState(initial?.accountId ?? null);
+  const [accountId, setAccountId] = useState(initial?.accountId ?? defaultAccountId);
   const amountRef = useRef<HTMLInputElement>(null);
 
   // Ohne Auswahl gilt das erste Konto, sobald die Konten geladen sind

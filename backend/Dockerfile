@@ -2,7 +2,7 @@ FROM docker.io/library/node:20-alpine
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
-COPY server.js transactions.js accounts.js ./
+COPY server.js transactions.js accounts.js stats.js ./
 COPY import ./import
 COPY import-profiles ./import-profiles
 USER node

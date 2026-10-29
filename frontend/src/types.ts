@@ -17,6 +17,7 @@ export interface Transaction extends NewTransaction {
   counterparty: string;
   purpose: string;
   importId: number | null; // gesetzt, wenn die Buchung aus einem CSV-Import stammt
+  transfer: boolean; // Umbuchung zwischen eigenen Konten: zählt weder als Einnahme noch als Ausgabe
 }
 
 export type AccountKind = "giro" | "savings" | "depot" | "credit_card" | "cash" | "other";
@@ -30,6 +31,38 @@ export interface NewAccount {
 
 export interface Account extends NewAccount {
   id: number;
+  bankBalance: number | null; // Kontostand laut Bank am Tag bankBalanceDate, daraus ergeben sich die Kontostände
+  bankBalanceDate: string | null; // YYYY-MM-DD
+  balance: number; // Kontostand nach allen Buchungen
+  transactionCount: number;
+  firstDate: string | null; // erster und letzter Buchungstag, null ohne Buchungen
+  lastDate: string | null;
+}
+
+/** Änderungen an einem Konto; bankBalance und bankBalanceDate gehören zusammen, null entfernt sie */
+export type AccountChanges = Partial<NewAccount> & { bankBalance?: number | null; bankBalanceDate?: string | null };
+
+/** Werte eines Kontos in einem Monat */
+export interface MonthStat {
+  month: string; // YYYY-MM
+  accountId: number;
+  income: number; // ohne Umbuchungen
+  expenses: number; // ohne Umbuchungen, positiv
+  transfers: number; // Umbuchungen mit Vorzeichen
+  balance: number; // Kontostand am Monatsende
+}
+
+/** Ein bisheriger Import */
+export interface ImportRun {
+  id: number;
+  profileName: string;
+  fileName: string;
+  createdAt: string; // ISO-Zeitstempel
+  imported: number;
+  duplicatesSkipped: number;
+  skipped: number;
+  invalid: number;
+  accounts: { id: number; name: string }[];
 }
 
 export interface ImportProfile {
@@ -89,9 +122,12 @@ export interface ProfileMismatch {
   missing: string[];
 }
 
+/** Kategorie für Umbuchungen zwischen eigenen Konten, z. B. Bargeld vom Girokonto ins Konto „Bargeld“ */
+export const TRANSFER_CATEGORY = "Umbuchung";
+
 export const CATEGORIES: Record<TxType, string[]> = {
-  out: ["Wohnen", "Lebensmittel", "Mobilität", "Freizeit", "Versicherung", "Gesundheit", "Sonstiges"],
-  in: ["Gehalt", "Nebenverdienst", "Erstattung", "Sonstiges"],
+  out: ["Wohnen", "Lebensmittel", "Mobilität", "Freizeit", "Versicherung", "Gesundheit", "Sonstiges", TRANSFER_CATEGORY],
+  in: ["Gehalt", "Nebenverdienst", "Erstattung", "Sonstiges", TRANSFER_CATEGORY],
 };
 
 export const ACCOUNT_KINDS: [AccountKind, string][] = [
@@ -102,3 +138,5 @@ export const ACCOUNT_KINDS: [AccountKind, string][] = [
   ["cash", "Bargeld"],
   ["other", "Sonstiges"],
 ];
+
+export const kindLabel = (kind: AccountKind) => ACCOUNT_KINDS.find(([value]) => value === kind)?.[1] ?? kind;

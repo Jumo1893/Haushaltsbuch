@@ -1,8 +1,11 @@
 import type {
   Account,
+  AccountChanges,
   ImportOptions,
   ImportPreview,
   ImportResult,
+  ImportRun,
+  MonthStat,
   NewAccount,
   NewTransaction,
   ProfileMismatch,
@@ -28,8 +31,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
-export const fetchTransactions = (month: string) =>
-  request<Transaction[]>(`transactions?month=${encodeURIComponent(month)}`);
+/** Nur die Buchungen dieses Kontos; ohne alle */
+const accountQuery = (account?: number) => (account === undefined ? "" : `&account=${account}`);
+
+/** Buchungen eines Monats (YYYY-MM), neueste zuerst */
+export const fetchTransactions = (month: string, account?: number) =>
+  request<Transaction[]>(`transactions?month=${encodeURIComponent(month)}${accountQuery(account)}`);
+
+/** Die neuesten Buchungen */
+export const fetchLatest = (limit: number, account?: number) =>
+  request<Transaction[]>(`transactions?limit=${limit}${accountQuery(account)}`);
+
+/** Werte je Monat und Konto bis zum Monat until (YYYY-MM) */
+export const fetchMonthStats = (until: string, account?: number) =>
+  request<MonthStat[]>(`stats/months?until=${encodeURIComponent(until)}${accountQuery(account)}`);
 
 export const createTransaction = (tx: NewTransaction) =>
   request<Transaction>("transactions", {
@@ -56,7 +71,18 @@ export const createAccount = (account: NewAccount) =>
     body: JSON.stringify(account),
   });
 
+export const updateAccount = (id: number, changes: AccountChanges) =>
+  request<Account>(`accounts/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+
+export const deleteAccount = (id: number) => request<null>(`accounts/${id}`, { method: "DELETE" });
+
 export const fetchImportOptions = () => request<ImportOptions>("import-profiles");
+
+export const fetchImports = () => request<ImportRun[]>("imports");
 
 /** Schickt die Datei unverändert als Body; der Dateiname steht im Header. */
 const upload = <T>(path: string, file: File) =>

@@ -13,21 +13,25 @@ Alles läuft in Containern mit [Podman](https://podman.io/), mehr braucht es fü
 Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker compose` ersetzen.
 
 ## Funktionen
-- Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Konto, Kategorie und Notiz anlegen, bearbeiten und löschen.
-  Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen lassen sich Kategorie und
-  Notiz ändern; Art, Betrag, Datum und Konto stehen durch den Import fest und bleiben, wie sie sind.
+- Übersicht mit Gesamtsaldo, Kontoständen, Verlauf und Einnahmen und Ausgaben je Monat, dazu eine eigene Seite je
+  Konto (siehe „Oberfläche“)
+- Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Konto, Kategorie und Notiz von jeder Seite aus erfassen,
+  bearbeiten und löschen. Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen lassen sich
+  Kategorie und Notiz ändern; Art, Betrag, Datum und Konto stehen durch den Import fest und bleiben, wie sie sind.
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
-- Monatsansicht mit Blättern zwischen den Monaten
-- Saldo sowie Summe der Einnahmen und Ausgaben im Monat
+- Kontostand mit der Bank abgleichen; Umbuchungen zwischen eigenen Konten zählen nicht als Einnahme oder Ausgabe
+- Monatsansicht mit Blättern zwischen den Monaten, Saldo sowie Summe der Einnahmen und Ausgaben im Monat
 - Ausgaben nach Kategorie als Balkendiagramm
-- Kontoumsätze aus CSV-Dateien der Bank importieren, mit Vorschau und Duplikaterkennung (siehe „CSV-Import“)
+- Kontoumsätze aus CSV-Dateien der Bank importieren, mit Vorschau, Duplikaterkennung und Liste der bisherigen Importe
+  (siehe „CSV-Import“)
 - Helles und dunkles Design (folgt der Systemeinstellung), für Mobilgeräte geeignet
 
 Kategorien:
-- **Ausgaben:** Wohnen, Lebensmittel, Mobilität, Freizeit, Versicherung, Gesundheit, Sonstiges
-- **Einnahmen:** Gehalt, Nebenverdienst, Erstattung, Sonstiges
+- **Ausgaben:** Wohnen, Lebensmittel, Mobilität, Freizeit, Versicherung, Gesundheit, Sonstiges, Umbuchung
+- **Einnahmen:** Gehalt, Nebenverdienst, Erstattung, Sonstiges, Umbuchung
 
-Die Kategorien sind in `frontend/src/types.ts` festgelegt und lassen sich dort anpassen.
+„Umbuchung“ kennzeichnet Geld, das zwischen eigenen Konten wandert (siehe „Umbuchungen“). Die Kategorien sind in
+`frontend/src/types.ts` festgelegt und lassen sich dort anpassen.
 
 ## Voraussetzungen
 - [Podman](https://podman.io/docs/installation) (z. B. Podman Desktop) mit einem Compose-Provider:
@@ -104,37 +108,92 @@ Betreibe sie deshalb nur im eigenen, vertrauenswürdigen Netz und mach sie nicht
 erreichbar. Wenn sie nur auf dem eigenen Rechner laufen soll, in `docker-compose.yml` beim Frontend
 `"127.0.0.1:8080:80"` statt `"8080:80"` eintragen.
 
+## Oberfläche
+Oben auf jeder Seite stehen die Navigation (Übersicht, Buchungen, Import) und „Neue Buchung“. Jede Seite hat eine
+eigene Adresse und lässt sich als Lesezeichen speichern, der gewählte Monat steht mit darin
+(z. B. `/buchungen?monat=2026-10`).
+
+**Übersicht** (`/`)
+- Gesamtsaldo aller Konten und seine Veränderung in den letzten zwölf Monaten
+- Einnahmen, Ausgaben und Saldo des laufenden Monats, verglichen mit dem Durchschnitt der zwölf Monate davor
+- Je Konto eine Karte mit Kontostand, Verlauf der letzten zwölf Monate und dem Tag der letzten Buchung. Liegt sie mehr
+  als 30 Tage zurück, nennt die Karte stattdessen ihr Alter, ein Hinweis, dass ein Import fällig sein könnte. Ein Klick
+  öffnet die Seite des Kontos.
+- Verlauf für 12 Monate, 2 Jahre oder alles: der Kontostand am Monatsende, für alle Konten zusammen oder je Konto, und
+  Einnahmen und Ausgaben je Monat mit Saldo und Sparquote. Ein Klick auf einen Monat zeigt seine Buchungen.
+- Die größten Ausgaben des laufenden Monats nach Empfänger und die letzten Buchungen
+
+**Konto** (`/konten/ID`): Kontostand mit Stand des Abgleichs, Einnahmen, Ausgaben und Saldo des laufenden Monats,
+Verlauf des Kontos und darunter seine Buchungen je Monat. Hier lässt sich das Konto bearbeiten, der Kontostand mit der
+Bank abgleichen, ein Import für das Konto starten und ein Konto ohne Buchungen löschen.
+
+**Buchungen** (`/buchungen`): alle Buchungen eines Monats über alle Konten, mit Saldo und Ausgaben nach Kategorie.
+
+**Import** (`/import`): der CSV-Import (siehe „CSV-Import“) und die letzten 50 Importe mit Datum, Datei, Anzahlen und
+den Konten, in die sie Umsätze übernommen haben.
+
+**Neue Buchung** öffnet das Formular über der aktuellen Seite. Auf der Seite eines Kontos ist dieses Konto
+vorausgewählt, sonst das Konto der zuletzt erfassten Buchung.
+
+In den Diagrammen zeigt ein Tooltip die Werte eines Monats, mit der Maus, per Fingertipp oder mit den Pfeiltasten.
+Unter jedem Diagramm stehen alle Werte auch als Tabelle („Werte als Tabelle“). Jedes Konto behält seine Farbe; sie
+richtet sich nach der Reihenfolge, in der die Konten angelegt wurden.
+
 ## Konten
 Jede Buchung gehört zu genau einem Konto. Ein Konto hat einen Namen, eine Art (Girokonto, Tagesgeld, Depot,
 Kreditkarte, Bargeld oder Sonstiges) und optional die Bank und die eigene IBAN. An der IBAN erkennt der CSV-Import,
 zu welchem Konto ein Umsatz gehört.
 
-- **Anlegen:** In jeder Kontoauswahl (beim Erfassen, beim Bearbeiten und in der Importvorschau) steht
-  „Neues Konto anlegen …“. Die IBAN wird auf Tippfehler geprüft (Prüfziffer) und kann nur zu einem Konto gehören.
+- **Anlegen:** In der Übersicht unter „Konto anlegen“ und in jeder Kontoauswahl (beim Erfassen, beim Bearbeiten und in
+  der Importvorschau) unter „Neues Konto anlegen …“. Die IBAN wird auf Tippfehler geprüft (Prüfziffer) und kann nur zu
+  einem Konto gehören.
 - **Beim Import:** Umsätze mit eigener IBAN (bei CSV-CAMT V8 die Spalte `Auftragskonto`) landen im Konto mit dieser
   IBAN. Gibt es noch keins, legt der Import es an: Name ist die IBAN, Art „Sonstiges“. Für Umsätze ohne eigene IBAN
   (z. B. Trade Republic) wird das Konto in der Vorschau gewählt.
-- **Ändern und Löschen:** Eine eigene Oberfläche dafür folgt. Bis dahin geht das über die API (siehe „API“),
-  z. B. ein beim Import angelegtes Konto umbenennen (Bash, z. B. Git Bash; die ID steht in `GET /api/accounts`):
-  ```
-  curl -X PATCH http://localhost:3000/api/accounts/2 -H "Content-Type: application/json" -d '{"name":"Girokonto","kind":"giro","institution":"BW-Bank"}'
-  ```
-  Löschen lässt sich nur ein Konto ohne Buchungen.
+- **Ändern und Löschen:** Auf der Seite des Kontos unter „Bearbeiten“, z. B. um ein beim Import angelegtes Konto
+  umzubenennen. Löschen lässt sich nur ein Konto ohne Buchungen, dann steht dort „Konto löschen“.
 - **Umstellung bestehender Daten:** Beim ersten Start dieser Version ordnet das Backend alle vorhandenen Buchungen
   einmalig einem Konto zu und legt die Konten dafür an: importierte mit eigener IBAN dem Konto dieser IBAN,
   importierte ohne IBAN einem Konto je Importprofil (z. B. „Trade Republic“), von Hand erfasste dem Konto „Bargeld“.
   Das Log meldet, wie viele Buchungen und Konten es waren. Ältere Versionen des Backends können danach keine
   Buchungen mehr speichern, weil das Konto Pflicht ist.
 
+### Kontostand abgleichen
+Ohne Abgleich ist der Kontostand die Summe aller Buchungen. Das stimmt nur, wenn alle Buchungen seit der Eröffnung
+des Kontos erfasst sind, und ein CSV-Export reicht meist nicht so weit zurück. Deshalb lässt sich auf der Seite des
+Kontos unter „Kontostand abgleichen“ der Kontostand eintragen, den die Bank für einen Tag nennt: den gebuchten Stand am
+Ende des Tages, ohne vorgemerkte Umsätze. Daraus rechnet die App den Stand vor der ersten Buchung zurück und so den
+Kontostand am Ende jedes Monats. Vor der ersten Buchung eines Kontos zählt im Verlauf dieser Anfangsstand.
+
+Werden später Buchungen bis zu diesem Tag importiert (z. B. ein älterer Zeitraum), ändern sie nur die früheren
+Kontostände, nicht den aktuellen, denn die Bank hatte sie schon eingerechnet. Buchungen nach diesem Tag ändern den
+aktuellen Kontostand wie gewohnt. Ein neuer Abgleich ersetzt den alten, „Abgleich entfernen“ macht ihn rückgängig.
+Solange ein Konto mit Buchungen nicht abgeglichen ist, steht auf seiner Karte in der Übersicht „nicht abgeglichen“.
+
+### Umbuchungen
+Eine Überweisung vom Girokonto auf das Tagesgeld ist weder Einnahme noch Ausgabe, das Geld wechselt nur das Konto.
+Solche Umbuchungen zählen deshalb in allen Summen, Diagrammen und bei „Ausgaben nach Kategorie“ nicht als Einnahme
+oder Ausgabe. Sie stehen getrennt als „Umbuchungen“ und zählen zum Saldo, denn sie ändern den Kontostand. Als
+Umbuchung gilt eine Buchung,
+- deren Gegenpartei-IBAN zu einem anderen eigenen Konto gehört (bei CSV-CAMT V8 die Spalte `Kontonummer/IBAN`, bei
+  Trade Republic `counterparty_iban`). Dafür muss beim Zielkonto die IBAN eingetragen sein; wird sie später ergänzt,
+  gilt das auch für schon importierte Buchungen. Die Liste markiert sie mit „Umbuchung“.
+- mit der Kategorie „Umbuchung“, z. B. für Buchungen ohne IBAN wie Bargeld vom Automaten, das ins Konto „Bargeld“
+  wandert.
+
+In den Listen stehen die Beträge von Umbuchungen grau statt grün oder rot.
+
 ## CSV-Import
-Unter „Umsätze importieren“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen:
+Auf der Seite „Import“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen. Kommt man über „Umsätze importieren“
+von der Seite eines Kontos, ist dieses Konto für Umsätze ohne eigene IBAN schon gewählt.
 
 1. Institut bzw. Format wählen (Importprofil).
 2. CSV-Datei auswählen oder in das Feld ziehen (höchstens 5 MB und 10.000 Datensätze).
 3. Die Vorschau zeigt, wie viele Datensätze neu sind, welche schon importiert wurden und welche Zeilen
    fehlerhaft sind (mit Zeilennummer und Grund), dazu die ersten Datensätze und die Konten, in die sie gehen.
    Enthält die Datei keine IBAN des eigenen Kontos, wird hier das Konto gewählt.
-4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung.
+4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung mit Links zu den Konten, und der
+   Import steht unter „Bisherige Importe“.
 
 Regeln:
 - **Buchungen:** Jeder gültige Datensatz wird eine Buchung in der Kategorie „Sonstiges“, mit negativem Betrag
@@ -239,9 +298,9 @@ Nach Änderungen am Backend (`backend/`) das Backend neu bauen:
 Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neuer IP-Adresse.
 
 ## Tests
-Die Unit-Tests für die Prüfung von Buchungen und Konten (inklusive IBAN-Prüfziffer) und den CSV-Import (Parser,
-Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung, Duplikaterkennung, Zuordnung zu Konten) laufen mit dem
-Test-Runner von Node.js 20+ und brauchen keine Datenbank:
+Die Unit-Tests für die Prüfung von Buchungen und Konten (inklusive IBAN-Prüfziffer und Kontostand laut Bank), die
+Parameter der Buchungsliste und den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
+Duplikaterkennung, Zuordnung zu Konten) laufen mit dem Test-Runner von Node.js 20+ und brauchen keine Datenbank:
 ```
 cd backend
 npm test
@@ -255,6 +314,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── server.js             Express-API und Tabellen-Setup
 │   ├── transactions.js       Prüfung der Eingaben beim Anlegen und Ändern von Buchungen
 │   ├── accounts.js           Konten: Prüfung der Eingaben, IBAN, Zuordnung beim Import
+│   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -266,15 +326,23 @@ Die Testdateien enthalten nur erfundene Daten.
     ├── Dockerfile            Build mit Node, Auslieferung mit nginx
     └── src/
         ├── main.tsx          Einstieg, rendert <App />
-        ├── App.tsx           Zustand (Monat, Buchungen) und Datenladen
+        ├── App.tsx           Kopfleiste, Navigation, Auswahl der Seite, „Neue Buchung“
+        ├── router.tsx        Seitenwechsel über die Adresse (History-API), Monat in ?monat=
+        ├── data.tsx          Konten für alle Seiten, Neuladen nach Änderungen (useLoad)
         ├── api.ts            Typisierte Aufrufe der REST-API
+        ├── stats.ts          Summen je Monat, Saldo, größte Ausgaben
         ├── types.ts          Typen und Kategorien
         ├── format.ts         Währungs- und Datumsformatierung
-        ├── index.css         Styles inkl. Dark Mode
-        └── components/       MonthNav, BalanceCard, TransactionForm,
-                              CategoryBreakdown, TransactionList,
-                              EditTransactionDialog, CsvImport, ImportPreview,
-                              AccountSelect, NewAccountDialog
+        ├── index.css         Styles inkl. Dark Mode und Diagrammfarben
+        ├── pages/            DashboardPage, AccountPage, BookingsPage, ImportPage
+        └── components/       MonthNav, MonthBookings, MonthKpis, BalanceCard,
+            │                 CategoryBreakdown, TopPayees, TransactionList,
+            │                 TransactionForm, NewTransactionDialog,
+            │                 EditTransactionDialog, AccountCard, AccountDialog,
+            │                 AccountSelect, ReconcileDialog, Segmented,
+            │                 CsvImport, ImportPreview, ImportHistory
+            └── charts/       LineChart, CashflowChart, Sparkline, ChartTable
+                              (eigenes SVG, ohne Diagramm-Bibliothek)
 ```
 
 ## Datenbank
@@ -318,6 +386,8 @@ Ein Eintrag je Konto.
 | `institution` | `TEXT`        | Bank, optional |
 | `iban`        | `TEXT`        | eigene IBAN ohne Leerzeichen, optional, höchstens ein Konto je IBAN |
 | `created_at`  | `TIMESTAMPTZ` | Zeitpunkt der Anlage |
+| `bank_balance` | `NUMERIC(12,2)` | Kontostand laut Bank am Ende des Tages `bank_balance_date`, optional (siehe „Kontostand abgleichen“) |
+| `bank_balance_date` | `DATE`   | Tag dieses Kontostands; gesetzt genau dann, wenn `bank_balance` gesetzt ist |
 
 ### Tabelle `imports`
 Ein Eintrag je Importvorgang.
@@ -356,14 +426,17 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 |----------|--------------------------------------|--------------|
 | `GET`    | `/api/health`                        | Statusprüfung, liefert `{ "ok": true }` |
 | `GET`    | `/api/transactions?month=YYYY-MM`    | Buchungen eines Monats, neueste zuerst. Mit `&account=ID` nur die eines Kontos |
+| `GET`    | `/api/transactions?limit=N`          | Die neuesten N Buchungen (1 bis 100), auch mit `&account=ID` |
 | `POST`   | `/api/transactions`                  | Buchung anlegen, liefert sie mit `201` zurück |
 | `PATCH`  | `/api/transactions/:id`              | Buchung ändern, nur die übergebenen Felder; liefert die geänderte Buchung |
 | `DELETE` | `/api/transactions/:id`              | Buchung löschen, `204` |
-| `GET`    | `/api/accounts`                      | Konten, nach Name sortiert |
+| `GET`    | `/api/stats/months?until=YYYY-MM`    | Werte je Konto und Monat, lückenlos vom ersten Monat mit Buchungen bis `until` (bzw. bis zur letzten Buchung). Mit `&account=ID` nur für ein Konto |
+| `GET`    | `/api/accounts`                      | Konten mit Kontostand, nach Name sortiert |
 | `POST`   | `/api/accounts`                      | Konto anlegen, liefert es mit `201` zurück |
 | `PATCH`  | `/api/accounts/:id`                  | Konto ändern, nur die übergebenen Felder; liefert das geänderte Konto |
 | `DELETE` | `/api/accounts/:id`                  | Konto löschen, `204`; enthält es noch Buchungen, `409` |
 | `GET`    | `/api/import-profiles`               | Importprofile und maximale Dateigröße |
+| `GET`    | `/api/imports`                       | Die letzten 50 Importe, neueste zuerst, mit den Konten, in die sie Umsätze übernommen haben |
 | `POST`   | `/api/imports/preview?profile=ID`    | Datei prüfen und Vorschau liefern, speichert nichts |
 | `POST`   | `/api/imports?profile=ID&duplicates=skip&account=ID` | Datei importieren, liefert die Zusammenfassung mit `201`. Mit `duplicates=include` werden auch mögliche Duplikate übernommen. `account` ist das Konto für Umsätze ohne eigene IBAN und nur nötig, wenn die Datei solche enthält |
 
@@ -372,7 +445,8 @@ Body für `POST /api/transactions`:
 { "type": "out", "amount": 42.5, "category": "Lebensmittel", "date": "2026-10-27", "note": "Wocheneinkauf", "accountId": 1 }
 ```
 Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`, auch wenn es das Konto nicht gibt.
-Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`).
+Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`)
+sowie `transfer`: `true` bei einer Umbuchung zwischen eigenen Konten (siehe „Umbuchungen“).
 
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
 `{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category` und
@@ -385,6 +459,19 @@ Body für `POST /api/accounts` (`institution` und `iban` sind optional):
 `kind` ist eine der Arten aus der Tabelle `accounts`. Die IBAN wird ohne Leerzeichen gespeichert und auf ihre
 Prüfziffer geprüft; `"iban": null` bei `PATCH` entfernt sie. Ungültige Eingaben: `400` mit Grund, IBAN schon bei einem
 anderen Konto: `409`.
+
+Den Kontostand laut Bank setzen beide Felder zusammen, `null` für beide entfernt ihn (siehe „Kontostand abgleichen“):
+```json
+{ "bankBalance": 1234.56, "bankBalanceDate": "2026-10-29" }
+```
+Konten enthalten zusätzlich `bankBalance` und `bankBalanceDate` (ohne Abgleich `null`), `balance` (Kontostand nach
+allen Buchungen), `transactionCount` sowie `firstDate` und `lastDate` (erster und letzter Buchungstag, ohne Buchungen
+`null`).
+
+`GET /api/stats/months` liefert je Konto und Monat z. B.
+`{ "month": "2026-10", "accountId": 1, "income": 2850, "expenses": 1935.59, "transfers": -300, "balance": 3456.78 }`:
+Einnahmen und Ausgaben ohne Umbuchungen, Umbuchungen mit Vorzeichen und den Kontostand am Monatsende. `until` ist der
+aktuelle Monat aus Sicht des Browsers.
 
 Für die Import-Endpunkte ist der Body die CSV-Datei selbst (`Content-Type: application/octet-stream`), der
 Dateiname steht URI-kodiert im Header `X-File-Name`. Passt die Datei nicht, antwortet das Backend mit `400`, `413`,

@@ -8,6 +8,8 @@ const { accountsForIbans } = require("../accounts");
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Kategorie für importierte Umsätze, bis es eine Kategorisierung gibt */
 const IMPORT_CATEGORY = "Sonstiges";
+/** So viele der letzten Importe liefert GET /api/imports */
+const HISTORY_LIMIT = 50;
 
 const asyncRoute = (fn) => (req, res, next) => fn(req, res).catch(next);
 
@@ -129,6 +131,20 @@ function createImportRouter(pool, profiles) {
       profiles: [...profiles.values()].map(({ id, name, description }) => ({ id, name, description })),
     });
   });
+
+  // Bisherige Importe, neueste zuerst, mit den Konten, in die sie Umsätze übernommen haben
+  router.get("/imports", asyncRoute(async (_req, res) => {
+    const { rows } = await pool.query(
+      `SELECT i.id, i.profile_name AS "profileName", i.file_name AS "fileName", i.created_at AS "createdAt",
+         i.imported_count AS imported, i.duplicate_count AS "duplicatesSkipped", i.skipped_count AS skipped,
+         i.invalid_count AS invalid,
+         COALESCE((SELECT json_agg(json_build_object('id', a.id, 'name', a.name) ORDER BY lower(a.name), a.id)
+           FROM accounts a WHERE a.id IN (SELECT t.account_id FROM transactions t WHERE t.import_id = i.id)), '[]') AS accounts
+       FROM imports i ORDER BY i.id DESC LIMIT $1`,
+      [HISTORY_LIMIT],
+    );
+    res.json(rows);
+  }));
 
   // Vorschau: liest die Datei und meldet, was ein Import übernehmen würde. Speichert nichts.
   router.post("/imports/preview", fileBody, asyncRoute(async (req, res) => {
