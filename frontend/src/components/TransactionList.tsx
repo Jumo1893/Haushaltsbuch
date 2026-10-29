@@ -1,16 +1,20 @@
 import { dayFormat, eur, parseDate } from "../format";
-import type { Transaction } from "../types";
+import type { Account, Transaction } from "../types";
 
 interface Props {
   items: Transaction[];
+  accounts: Account[];
   onEdit: (tx: Transaction) => void;
   onDelete: (id: number) => void;
 }
 
-export default function TransactionList({ items, onEdit, onDelete }: Props) {
+export default function TransactionList({ items, accounts, onEdit, onDelete }: Props) {
   if (!items.length) {
     return <p className="empty">Keine Buchungen. Trage oben deine erste Einnahme oder Ausgabe ein.</p>;
   }
+
+  // Das Konto nur nennen, wenn es mehrere gibt
+  const accountNames = new Map(accounts.length > 1 ? accounts.map((a) => [a.id, a.name]) : []);
 
   return (
     <ul>
@@ -18,6 +22,7 @@ export default function TransactionList({ items, onEdit, onDelete }: Props) {
         // Notiz und, bei importierten Buchungen, Gegenpartei oder Verwendungszweck
         const text = [x.note, x.counterparty || x.purpose].filter(Boolean).join(" · ");
         const day = dayFormat.format(parseDate(x.date));
+        const account = accountNames.get(x.accountId);
         const amount = `${x.type === "in" ? "+" : "−"}${eur.format(x.amount)}`;
         return (
           <li key={x.id}>
@@ -30,6 +35,7 @@ export default function TransactionList({ items, onEdit, onDelete }: Props) {
                 {x.category}
                 <small>
                   {day}
+                  {account && ` · ${account}`}
                   {text && ` – ${text}`}
                 </small>
               </span>

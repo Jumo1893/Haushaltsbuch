@@ -6,6 +6,9 @@ export const dateFormat = new Intl.DateTimeFormat("de-DE", { day: "2-digit", mon
 /** Datum (YYYY-MM-DD) als lokales Date-Objekt */
 export const parseDate = (date: string) => new Date(`${date}T00:00:00`);
 
+/** IBAN in Vierergruppen, z. B. "DE89 3704 0044 0532 0130 00" */
+export const formatIban = (iban: string) => iban.replace(/(.{4})(?=.)/g, "$1 ");
+
 /** Dateigröße in MB, z. B. "5 MB" */
 export const megabytes = (bytes: number) =>
   `${(bytes / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB`;

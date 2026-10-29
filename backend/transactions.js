@@ -3,8 +3,8 @@
 /** Größter Betrag in Cent, den die Spalte amount (NUMERIC(12,2)) aufnimmt */
 const MAX_CENTS = 999999999999;
 
-/** Felder, die bei importierten Buchungen von der Bank stammen und nicht geändert werden */
-const BANK_FIELDS = ["type", "amount", "date"];
+/** Felder, die bei importierten Buchungen aus dem Import stammen und nicht geändert werden */
+const BANK_FIELDS = ["type", "amount", "date", "account_id"];
 
 /** true, wenn der Text ein gültiges Datum im Format YYYY-MM-DD ist (z. B. kein 30. Februar) */
 function isDate(value) {
@@ -15,8 +15,9 @@ function isDate(value) {
 
 /**
  * Prüft die Felder einer Buchung und liefert sie für die Datenbank aufbereitet, sonst null.
- * Beim Anlegen müssen type, amount, category und date vorhanden sein. Mit partial (Ändern)
- * werden nur die übergebenen Felder geprüft und zurückgegeben.
+ * Die Schlüssel sind Spaltennamen (accountId wird zu account_id). Beim Anlegen müssen type, amount,
+ * category, date und accountId vorhanden sein. Mit partial (Ändern) werden nur die übergebenen
+ * Felder geprüft und zurückgegeben.
  */
 function readTransaction(body, partial = false) {
   const given = (key) => !partial || body[key] !== undefined;
@@ -39,6 +40,11 @@ function readTransaction(body, partial = false) {
     values.date = body.date;
   }
   if (given("note")) values.note = String(body.note ?? "").trim().slice(0, 60);
+  if (given("accountId")) {
+    // Ob es das Konto gibt, prüft die Datenbank (Fremdschlüssel)
+    if (!Number.isInteger(body.accountId) || body.accountId < 1) return null;
+    values.account_id = body.accountId;
+  }
   return values;
 }
 

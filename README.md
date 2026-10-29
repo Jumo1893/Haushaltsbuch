@@ -13,9 +13,10 @@ Alles läuft in Containern mit [Podman](https://podman.io/), mehr braucht es fü
 Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker compose` ersetzen.
 
 ## Funktionen
-- Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Kategorie und Notiz anlegen, bearbeiten und löschen.
+- Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Konto, Kategorie und Notiz anlegen, bearbeiten und löschen.
   Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen lassen sich Kategorie und
-  Notiz ändern; Art, Betrag und Datum stammen von der Bank und bleiben, wie sie sind.
+  Notiz ändern; Art, Betrag, Datum und Konto stehen durch den Import fest und bleiben, wie sie sind.
+- Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
 - Monatsansicht mit Blättern zwischen den Monaten
 - Saldo sowie Summe der Einnahmen und Ausgaben im Monat
 - Ausgaben nach Kategorie als Balkendiagramm
@@ -56,7 +57,8 @@ Dann http://localhost:8080 öffnen.
 
 Mit `-d` laufen die Container im Hintergrund (`podman compose up -d --build`).
 Die Datenbanktabellen legt das Backend beim Start automatisch an. Neue Spalten aus späteren Versionen
-ergänzt es in einer bestehenden Datenbank, ohne Daten zu verändern.
+ergänzt es in einer bestehenden Datenbank. Beim ersten Start mit Konten ordnet es außerdem alle vorhandenen
+Buchungen einmalig einem Konto zu (siehe „Konten“). Vor dem Update deshalb ein Backup machen (siehe „Backup“).
 
 **Nach einem Neustart des Rechners** startet Podman die Container nicht von selbst wieder
 (`restart: unless-stopped` greift nur, solange die Podman-Maschine läuft). Dann einfach
@@ -102,13 +104,36 @@ Betreibe sie deshalb nur im eigenen, vertrauenswürdigen Netz und mach sie nicht
 erreichbar. Wenn sie nur auf dem eigenen Rechner laufen soll, in `docker-compose.yml` beim Frontend
 `"127.0.0.1:8080:80"` statt `"8080:80"` eintragen.
 
+## Konten
+Jede Buchung gehört zu genau einem Konto. Ein Konto hat einen Namen, eine Art (Girokonto, Tagesgeld, Depot,
+Kreditkarte, Bargeld oder Sonstiges) und optional die Bank und die eigene IBAN. An der IBAN erkennt der CSV-Import,
+zu welchem Konto ein Umsatz gehört.
+
+- **Anlegen:** In jeder Kontoauswahl (beim Erfassen, beim Bearbeiten und in der Importvorschau) steht
+  „Neues Konto anlegen …“. Die IBAN wird auf Tippfehler geprüft (Prüfziffer) und kann nur zu einem Konto gehören.
+- **Beim Import:** Umsätze mit eigener IBAN (bei CSV-CAMT V8 die Spalte `Auftragskonto`) landen im Konto mit dieser
+  IBAN. Gibt es noch keins, legt der Import es an: Name ist die IBAN, Art „Sonstiges“. Für Umsätze ohne eigene IBAN
+  (z. B. Trade Republic) wird das Konto in der Vorschau gewählt.
+- **Ändern und Löschen:** Eine eigene Oberfläche dafür folgt. Bis dahin geht das über die API (siehe „API“),
+  z. B. ein beim Import angelegtes Konto umbenennen (Bash, z. B. Git Bash; die ID steht in `GET /api/accounts`):
+  ```
+  curl -X PATCH http://localhost:3000/api/accounts/2 -H "Content-Type: application/json" -d '{"name":"Girokonto","kind":"giro","institution":"BW-Bank"}'
+  ```
+  Löschen lässt sich nur ein Konto ohne Buchungen.
+- **Umstellung bestehender Daten:** Beim ersten Start dieser Version ordnet das Backend alle vorhandenen Buchungen
+  einmalig einem Konto zu und legt die Konten dafür an: importierte mit eigener IBAN dem Konto dieser IBAN,
+  importierte ohne IBAN einem Konto je Importprofil (z. B. „Trade Republic“), von Hand erfasste dem Konto „Bargeld“.
+  Das Log meldet, wie viele Buchungen und Konten es waren. Ältere Versionen des Backends können danach keine
+  Buchungen mehr speichern, weil das Konto Pflicht ist.
+
 ## CSV-Import
 Unter „Umsätze importieren“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen:
 
 1. Institut bzw. Format wählen (Importprofil).
 2. CSV-Datei auswählen oder in das Feld ziehen (höchstens 5 MB und 10.000 Datensätze).
 3. Die Vorschau zeigt, wie viele Datensätze neu sind, welche schon importiert wurden und welche Zeilen
-   fehlerhaft sind (mit Zeilennummer und Grund), dazu die ersten Datensätze.
+   fehlerhaft sind (mit Zeilennummer und Grund), dazu die ersten Datensätze und die Konten, in die sie gehen.
+   Enthält die Datei keine IBAN des eigenen Kontos, wird hier das Konto gewählt.
 4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung.
 
 Regeln:
@@ -116,6 +141,9 @@ Regeln:
   als Ausgabe, mit positivem als Einnahme. Gegenpartei und Verwendungszweck werden mitgespeichert und in der
   Buchungsliste angezeigt, weitere Angaben (z. B. IBAN, Buchungstext, ISIN) in der Spalte `details`.
   Stehen Gebühr und Steuer in eigenen Spalten, sind sie im Betrag der Buchung enthalten.
+- **Konten:** Umsätze mit eigener IBAN gehen in das Konto mit dieser IBAN, ein unbekanntes Konto legt der Import an.
+  Eine Datei kann Umsätze mehrerer Konten enthalten. Umsätze ohne eigene IBAN gehen in das in der Vorschau gewählte
+  Konto (siehe „Konten“).
 - **Fehlerhafte Zeilen** (z. B. ungültiges Datum, unlesbarer Betrag, andere Währung als EUR) werden nicht
   übernommen, alle gültigen Zeilen schon.
 - **Zeilen ohne Geldbewegung** (Betrag leer oder 0,00, z. B. ein Aktiensplit) werden ausgelassen.
@@ -137,8 +165,8 @@ Regeln:
 
 | Profil      | Datei in `backend/import-profiles/` | Beschreibung |
 |-------------|-------------------------------------|--------------|
-| CSV-CAMT V8 | `csv-camt-v8.json` | Export „CSV-CAMT V8“, z. B. aus dem Online-Banking der Sparkassen. Trennzeichen `;`, Datum `TT.MM.JJ` oder `TT.MM.JJJJ`, Dezimalkomma, Kodierung UTF-8 oder Windows-1252 |
-| Trade Republic | `trade-republic.json` | Transaktionsexport aus der Trade-Republic-App (Spalten `datetime`, `date`, `account_type`, … `mcc_code`). Trennzeichen `,`, Datum `JJJJ-MM-TT`, Dezimalpunkt, UTF-8. Übernimmt alle Geldbewegungen: Kartenzahlungen, Überweisungen, Zinsen, Ausschüttungen, Steuern sowie Käufe und Verkäufe (inklusive Sparpläne). Betrag = `amount` + `fee` + `tax`, Duplikate über `transaction_id` |
+| CSV-CAMT V8 | `csv-camt-v8.json` | Export „CSV-CAMT V8“, z. B. aus dem Online-Banking der Sparkassen. Trennzeichen `;`, Datum `TT.MM.JJ` oder `TT.MM.JJJJ`, Dezimalkomma, Kodierung UTF-8 oder Windows-1252. Konto über die IBAN in `Auftragskonto` |
+| Trade Republic | `trade-republic.json` | Transaktionsexport aus der Trade-Republic-App (Spalten `datetime`, `date`, `account_type`, … `mcc_code`). Trennzeichen `,`, Datum `JJJJ-MM-TT`, Dezimalpunkt, UTF-8. Übernimmt alle Geldbewegungen: Kartenzahlungen, Überweisungen, Zinsen, Ausschüttungen, Steuern sowie Käufe und Verkäufe (inklusive Sparpläne). Betrag = `amount` + `fee` + `tax`, Duplikate über `transaction_id`. Enthält keine eigene IBAN, das Konto wird in der Vorschau gewählt |
 
 Beispieldateien mit erfundenen Daten (inklusive fehlerhafter Zeilen) liegen unter `backend/test/fixtures/`.
 Sie sind für Tests gedacht: Importiert landen ihre Umsätze wie echte Buchungen in der Datenbank.
@@ -173,7 +201,7 @@ Felder für `columns` (Pflicht sind `date` und `amount`):
 | `counterparty` | Name der Gegenpartei | `counterparty` |
 | `purpose` | Verwendungszweck | `purpose` |
 | `transactionId` | eindeutige ID der Bank, ersetzt bei der Duplikaterkennung alle anderen Merkmale | `details` |
-| `account` | eigenes Konto (IBAN) | `details` |
+| `account` | eigenes Konto (IBAN), ordnet den Umsatz dem Konto mit dieser IBAN zu | `account_id`, `details` |
 | `valueDate` | Valutadatum | `details` |
 | `bookingText` | Buchungstext oder Art der Buchung, z. B. LASTSCHRIFT oder BUY | `details` |
 | `counterpartyIban`, `counterpartyBic` | IBAN und BIC der Gegenpartei | `details` |
@@ -211,9 +239,9 @@ Nach Änderungen am Backend (`backend/`) das Backend neu bauen:
 Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neuer IP-Adresse.
 
 ## Tests
-Die Unit-Tests für die Prüfung von Buchungen und den CSV-Import (Parser, Zeichenkodierung, Datums- und
-Zahlenformate, Profilprüfung, Duplikaterkennung) laufen mit dem Test-Runner von Node.js 20+ und brauchen
-keine Datenbank:
+Die Unit-Tests für die Prüfung von Buchungen und Konten (inklusive IBAN-Prüfziffer) und den CSV-Import (Parser,
+Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung, Duplikaterkennung, Zuordnung zu Konten) laufen mit dem
+Test-Runner von Node.js 20+ und brauchen keine Datenbank:
 ```
 cd backend
 npm test
@@ -226,6 +254,7 @@ Die Testdateien enthalten nur erfundene Daten.
 ├── backend/
 │   ├── server.js             Express-API und Tabellen-Setup
 │   ├── transactions.js       Prüfung der Eingaben beim Anlegen und Ändern von Buchungen
+│   ├── accounts.js           Konten: Prüfung der Eingaben, IBAN, Zuordnung beim Import
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -244,7 +273,8 @@ Die Testdateien enthalten nur erfundene Daten.
         ├── index.css         Styles inkl. Dark Mode
         └── components/       MonthNav, BalanceCard, TransactionForm,
                               CategoryBreakdown, TransactionList,
-                              EditTransactionDialog, CsvImport, ImportPreview
+                              EditTransactionDialog, CsvImport, ImportPreview,
+                              AccountSelect, NewAccountDialog
 ```
 
 ## Datenbank
@@ -275,6 +305,19 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | `details`    | `JSONB`         | weitere Angaben aus dem Import, z. B. IBAN, Buchungstext |
 | `import_id`  | `INTEGER`       | Verweis auf `imports.id`, leer bei Erfassung von Hand |
 | `import_hash` | `TEXT`         | Fingerabdruck für die Duplikaterkennung |
+| `account_id` | `INTEGER`       | Verweis auf `accounts.id`, Pflicht |
+
+### Tabelle `accounts`
+Ein Eintrag je Konto.
+
+| Spalte        | Typ           | Hinweis |
+|---------------|---------------|---------|
+| `id`          | `SERIAL`      | Primärschlüssel |
+| `name`        | `TEXT`        | max. 60 Zeichen |
+| `kind`        | `TEXT`        | `giro`, `savings` (Tagesgeld), `depot`, `credit_card`, `cash` (Bargeld) oder `other` |
+| `institution` | `TEXT`        | Bank, optional |
+| `iban`        | `TEXT`        | eigene IBAN ohne Leerzeichen, optional, höchstens ein Konto je IBAN |
+| `created_at`  | `TIMESTAMPTZ` | Zeitpunkt der Anlage |
 
 ### Tabelle `imports`
 Ein Eintrag je Importvorgang.
@@ -312,29 +355,47 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | Methode  | Pfad                                 | Beschreibung |
 |----------|--------------------------------------|--------------|
 | `GET`    | `/api/health`                        | Statusprüfung, liefert `{ "ok": true }` |
-| `GET`    | `/api/transactions?month=YYYY-MM`    | Buchungen eines Monats, neueste zuerst |
+| `GET`    | `/api/transactions?month=YYYY-MM`    | Buchungen eines Monats, neueste zuerst. Mit `&account=ID` nur die eines Kontos |
 | `POST`   | `/api/transactions`                  | Buchung anlegen, liefert sie mit `201` zurück |
 | `PATCH`  | `/api/transactions/:id`              | Buchung ändern, nur die übergebenen Felder; liefert die geänderte Buchung |
 | `DELETE` | `/api/transactions/:id`              | Buchung löschen, `204` |
+| `GET`    | `/api/accounts`                      | Konten, nach Name sortiert |
+| `POST`   | `/api/accounts`                      | Konto anlegen, liefert es mit `201` zurück |
+| `PATCH`  | `/api/accounts/:id`                  | Konto ändern, nur die übergebenen Felder; liefert das geänderte Konto |
+| `DELETE` | `/api/accounts/:id`                  | Konto löschen, `204`; enthält es noch Buchungen, `409` |
 | `GET`    | `/api/import-profiles`               | Importprofile und maximale Dateigröße |
 | `POST`   | `/api/imports/preview?profile=ID`    | Datei prüfen und Vorschau liefern, speichert nichts |
-| `POST`   | `/api/imports?profile=ID&duplicates=skip` | Datei importieren, liefert die Zusammenfassung mit `201`. Mit `duplicates=include` werden auch mögliche Duplikate übernommen |
+| `POST`   | `/api/imports?profile=ID&duplicates=skip&account=ID` | Datei importieren, liefert die Zusammenfassung mit `201`. Mit `duplicates=include` werden auch mögliche Duplikate übernommen. `account` ist das Konto für Umsätze ohne eigene IBAN und nur nötig, wenn die Datei solche enthält |
 
 Body für `POST /api/transactions`:
 ```json
-{ "type": "out", "amount": 42.5, "category": "Lebensmittel", "date": "2026-10-27", "note": "Wocheneinkauf" }
+{ "type": "out", "amount": 42.5, "category": "Lebensmittel", "date": "2026-10-27", "note": "Wocheneinkauf", "accountId": 1 }
 ```
-Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`.
+Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`, auch wenn es das Konto nicht gibt.
 Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`).
 
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
 `{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category` und
 `note` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
 
+Body für `POST /api/accounts` (`institution` und `iban` sind optional):
+```json
+{ "name": "Girokonto", "kind": "giro", "institution": "BW-Bank", "iban": "DE89 3704 0044 0532 0130 00" }
+```
+`kind` ist eine der Arten aus der Tabelle `accounts`. Die IBAN wird ohne Leerzeichen gespeichert und auf ihre
+Prüfziffer geprüft; `"iban": null` bei `PATCH` entfernt sie. Ungültige Eingaben: `400` mit Grund, IBAN schon bei einem
+anderen Konto: `409`.
+
 Für die Import-Endpunkte ist der Body die CSV-Datei selbst (`Content-Type: application/octet-stream`), der
 Dateiname steht URI-kodiert im Header `X-File-Name`. Passt die Datei nicht, antwortet das Backend mit `400`, `413`,
 `415` oder `422` und `{ "error": "..." }`, bei fehlenden Spalten zusätzlich mit
 `"mismatch": { "expected": [...], "found": [...], "missing": [...] }`.
+
+Die Vorschau nennt unter `accounts` je eigener IBAN das Konto und die Zahl der neuen und doppelten Datensätze, z. B.
+`{ "iban": "DE89370400440532013000", "accountId": 1, "accountName": "Girokonto", "new": 12, "duplicate": 0 }`.
+`accountId` ist `null`, wenn der Import das Konto erst anlegt. Datensätze ohne IBAN stehen unter `"iban": null`, für
+sie braucht der Import `account`. Die Zusammenfassung des Imports nennt unter `accounts` die Konten mit der Zahl
+der importierten Umsätze und ob sie neu angelegt wurden.
 
 ## Fehlerbehebung
 - **`Cannot connect to Podman` oder ähnliche Verbindungsfehler:** Die Podman-Maschine läuft nicht.

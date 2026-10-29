@@ -2,7 +2,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { isDate, readTransaction, lockedFields } = require("../transactions");
 
-const valid = () => ({ type: "out", amount: 42.5, category: "Lebensmittel", date: "2026-10-27", note: "Wocheneinkauf" });
+const valid = () => ({
+  type: "out",
+  amount: 42.5,
+  category: "Lebensmittel",
+  date: "2026-10-27",
+  note: "Wocheneinkauf",
+  accountId: 3,
+});
 
 test("Anlegen: gültige Buchung wird für die Datenbank aufbereitet", () => {
   assert.deepEqual(readTransaction(valid()), {
@@ -11,6 +18,7 @@ test("Anlegen: gültige Buchung wird für die Datenbank aufbereitet", () => {
     category: "Lebensmittel",
     date: "2026-10-27",
     note: "Wocheneinkauf",
+    account_id: 3,
   });
 });
 
@@ -36,6 +44,10 @@ test("Anlegen: fehlende oder ungültige Pflichtfelder", () => {
     "Datum fehlt": { date: undefined },
     "Datum im falschen Format": { date: "27.10.2026" },
     "Datum gibt es nicht": { date: "2026-02-30" },
+    "Konto fehlt": { accountId: undefined },
+    "Konto als Text": { accountId: "3" },
+    "Konto 0": { accountId: 0 },
+    "Konto keine ganze Zahl": { accountId: 1.5 },
   };
   for (const [name, change] of Object.entries(cases)) {
     assert.equal(readTransaction({ ...valid(), ...change }), null, name);
@@ -52,21 +64,24 @@ test("Ändern: nur übergebene Felder werden geprüft und geliefert", () => {
   assert.deepEqual(readTransaction({ category: "Freizeit" }, true), { category: "Freizeit" });
   assert.deepEqual(readTransaction({ note: "" }, true), { note: "" });
   assert.deepEqual(readTransaction({}, true), {});
+  assert.deepEqual(readTransaction({ accountId: 2 }, true), { account_id: 2 });
+  assert.equal(readTransaction({ accountId: null }, true), null);
   assert.equal(readTransaction({ category: "" }, true), null);
   assert.equal(readTransaction({ amount: -1 }, true), null);
   assert.equal(readTransaction({ date: "2026-13-01" }, true), null);
 });
 
 test("Ändern: unbekannte Felder werden ignoriert", () => {
-  assert.deepEqual(readTransaction({ category: "Wohnen", id: 7, import_id: null, counterparty: "X" }, true), {
+  assert.deepEqual(readTransaction({ category: "Wohnen", id: 7, import_id: null, account_id: 5, counterparty: "X" }, true), {
     category: "Wohnen",
   });
 });
 
-test("importierte Buchungen: Art, Betrag und Datum sind gesperrt", () => {
+test("importierte Buchungen: Art, Betrag, Datum und Konto sind gesperrt", () => {
   assert.deepEqual(lockedFields({ category: "Wohnen", note: "Miete" }), []);
   assert.deepEqual(lockedFields({ amount: "1.00", date: "2026-01-01", note: "" }), ["amount", "date"]);
   assert.deepEqual(lockedFields({ type: "in" }), ["type"]);
+  assert.deepEqual(lockedFields({ account_id: 2, category: "Wohnen" }), ["account_id"]);
 });
 
 test("Datum: Schaltjahre und Monatsenden", () => {

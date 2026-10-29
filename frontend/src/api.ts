@@ -1,7 +1,9 @@
 import type {
+  Account,
   ImportOptions,
   ImportPreview,
   ImportResult,
+  NewAccount,
   NewTransaction,
   ProfileMismatch,
   Transaction,
@@ -45,6 +47,15 @@ export const updateTransaction = (id: number, changes: TransactionChanges) =>
 
 export const deleteTransaction = (id: number) => request<null>(`transactions/${id}`, { method: "DELETE" });
 
+export const fetchAccounts = () => request<Account[]>("accounts");
+
+export const createAccount = (account: NewAccount) =>
+  request<Account>("accounts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(account),
+  });
+
 export const fetchImportOptions = () => request<ImportOptions>("import-profiles");
 
 /** Schickt die Datei unverändert als Body; der Dateiname steht im Header. */
@@ -58,8 +69,10 @@ const upload = <T>(path: string, file: File) =>
 export const previewImport = (profile: string, file: File) =>
   upload<ImportPreview>(`imports/preview?profile=${encodeURIComponent(profile)}`, file);
 
-export const runImport = (profile: string, file: File, includeDuplicates: boolean) =>
+/** `account`: Konto für Datensätze ohne eigene IBAN, falls die Datei welche enthält */
+export const runImport = (profile: string, file: File, includeDuplicates: boolean, account: number | null) =>
   upload<ImportResult>(
-    `imports?profile=${encodeURIComponent(profile)}&duplicates=${includeDuplicates ? "include" : "skip"}`,
+    `imports?profile=${encodeURIComponent(profile)}&duplicates=${includeDuplicates ? "include" : "skip"}` +
+      (account === null ? "" : `&account=${account}`),
     file,
   );

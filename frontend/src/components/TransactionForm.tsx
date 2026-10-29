@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 import { today } from "../format";
-import { CATEGORIES, type NewTransaction, type TxType } from "../types";
+import { CATEGORIES, type Account, type NewAccount, type NewTransaction, type TxType } from "../types";
+import AccountSelect from "./AccountSelect";
 
 const TYPES: [TxType, string][] = [
   ["out", "Ausgabe"],
@@ -10,7 +11,10 @@ const TYPES: [TxType, string][] = [
 interface Props {
   /** Vorhandene Buchung zum Bearbeiten; ohne wird eine neue Buchung erfasst. */
   initial?: NewTransaction;
-  /** Art, Betrag und Datum sperren, z. B. bei importierten Buchungen. */
+  accounts: Account[];
+  /** Legt ein Konto aus der Kontoauswahl heraus an. */
+  onCreateAccount: (account: NewAccount) => Promise<Account>;
+  /** Art, Betrag, Datum und Konto sperren, z. B. bei importierten Buchungen. */
   lockBankData?: boolean;
   submitLabel?: string;
   /** Liefert true, wenn gespeichert wurde – bei einer neuen Buchung wird das Formular dann geleert. */
@@ -20,6 +24,8 @@ interface Props {
 
 export default function TransactionForm({
   initial,
+  accounts,
+  onCreateAccount,
   lockBankData = false,
   submitLabel = "Buchung speichern",
   onSubmit,
@@ -31,7 +37,11 @@ export default function TransactionForm({
   const [date, setDate] = useState(initial?.date ?? today);
   const [category, setCategory] = useState(initial?.category ?? CATEGORIES.out[0]);
   const [note, setNote] = useState(initial?.note ?? "");
+  const [accountId, setAccountId] = useState(initial?.accountId ?? null);
   const amountRef = useRef<HTMLInputElement>(null);
+
+  // Ohne Auswahl gilt das erste Konto, sobald die Konten geladen sind
+  const account = accountId ?? accounts[0]?.id ?? null;
 
   // Eine Kategorie, die nicht (mehr) in der Liste steht, bleibt auswählbar
   const categories = CATEGORIES[type].includes(category) ? CATEGORIES[type] : [category, ...CATEGORIES[type]];
@@ -44,8 +54,8 @@ export default function TransactionForm({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(amount);
-    if (!(amt > 0)) return;
-    const ok = await onSubmit({ type, amount: amt, category, date, note: note.trim() });
+    if (!(amt > 0) || account === null) return;
+    const ok = await onSubmit({ type, amount: amt, category, date, note: note.trim(), accountId: account });
     if (ok && !initial) {
       setAmount("");
       setNote("");
@@ -97,6 +107,17 @@ export default function TransactionForm({
         />
       </div>
       <div>
+        <label htmlFor={`${id}-account`}>Konto</label>
+        <AccountSelect
+          id={`${id}-account`}
+          accounts={accounts}
+          value={account}
+          disabled={lockBankData}
+          onChange={setAccountId}
+          onCreate={onCreateAccount}
+        />
+      </div>
+      <div>
         <label htmlFor={`${id}-cat`}>Kategorie</label>
         <select id={`${id}-cat`} value={category} onChange={(e) => setCategory(e.target.value)}>
           {categories.map((c) => (
@@ -104,7 +125,7 @@ export default function TransactionForm({
           ))}
         </select>
       </div>
-      <div>
+      <div className="full">
         <label htmlFor={`${id}-note`}>Notiz</label>
         <input id={`${id}-note`} type="text" maxLength={60} value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
