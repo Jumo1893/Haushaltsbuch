@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { createTransaction, deleteTransaction, fetchTransactions, updateTransaction } from "./api";
+import {
+  createAccount,
+  createTransaction,
+  deleteTransaction,
+  fetchAccounts,
+  fetchTransactions,
+  updateTransaction,
+} from "./api";
 import { addMonths, monthOf, ym } from "./format";
-import type { NewTransaction, Transaction, TransactionChanges } from "./types";
+import type { Account, NewAccount, NewTransaction, Transaction, TransactionChanges } from "./types";
 import MonthNav from "./components/MonthNav";
 import BalanceCard from "./components/BalanceCard";
 import TransactionForm from "./components/TransactionForm";
@@ -15,9 +22,13 @@ const firstOfThisMonth = () => {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 };
 
+/** Konten alphabetisch, wie in den Auswahllisten */
+const byName = (a: Account, b: Account) => a.name.localeCompare(b.name, "de") || a.id - b.id;
+
 export default function App() {
   const [month, setMonth] = useState(firstOfThisMonth);
   const [items, setItems] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Transaction | null>(null);
 
@@ -33,6 +44,25 @@ export default function App() {
   useEffect(() => {
     load(month);
   }, [month, load]);
+
+  const loadAccounts = useCallback(async () => {
+    try {
+      setAccounts((await fetchAccounts()).sort(byName));
+    } catch {
+      setError("Der Server ist nicht erreichbar. Prüfe, ob alle Container laufen.");
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAccounts();
+  }, [loadAccounts]);
+
+  // Fehler beim Anlegen zeigt der Dialog selbst an
+  const handleCreateAccount = async (account: NewAccount) => {
+    const created = await createAccount(account);
+    setAccounts((list) => [...list, created].sort(byName));
+    return created;
+  };
 
   // Zum Monat der Buchung springen; gleicher Monat → direkt neu laden
   const showMonthOf = async (date: string) => {
@@ -84,12 +114,19 @@ export default function App() {
 
       <section>
         <h2>Neue Buchung</h2>
-        <TransactionForm onSubmit={handleAdd} />
+        <TransactionForm accounts={accounts} onCreateAccount={handleCreateAccount} onSubmit={handleAdd} />
       </section>
 
       <section>
         <h2>Umsätze importieren</h2>
-        <CsvImport onImported={() => load(month)} />
+        <CsvImport
+          accounts={accounts}
+          onCreateAccount={handleCreateAccount}
+          onImported={() => {
+            load(month);
+            loadAccounts(); // der Import kann Konten angelegt haben
+          }}
+        />
       </section>
 
       <section>
@@ -99,13 +136,15 @@ export default function App() {
 
       <section>
         <h2>Buchungen</h2>
-        <TransactionList items={items} onEdit={setEditing} onDelete={handleDelete} />
+        <TransactionList items={items} accounts={accounts} onEdit={setEditing} onDelete={handleDelete} />
       </section>
 
       {editing && (
         <EditTransactionDialog
           key={editing.id}
           tx={editing}
+          accounts={accounts}
+          onCreateAccount={handleCreateAccount}
           onSave={(changes) => handleUpdate(editing, changes)}
           onClose={() => setEditing(null)}
         />

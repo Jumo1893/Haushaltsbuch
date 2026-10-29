@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, fetchImportOptions, previewImport, runImport } from "../api";
 import { megabytes } from "../format";
-import type { ImportOptions, ImportPreview as Preview, ImportResult, ProfileMismatch } from "../types";
+import type { Account, ImportOptions, ImportPreview as Preview, ImportResult, NewAccount, ProfileMismatch } from "../types";
 import ImportPreview, { Stat } from "./ImportPreview";
 
 type Step =
@@ -20,17 +20,20 @@ const toProblem = (e: unknown, fallback: string): Problem =>
   e instanceof ApiError && e.body?.error ? { message: e.body.error, mismatch: e.body.mismatch } : { message: fallback };
 
 interface Props {
-  /** Wird nach einem erfolgreichen Import aufgerufen, z. B. um die Buchungen neu zu laden. */
+  accounts: Account[];
+  onCreateAccount: (account: NewAccount) => Promise<Account>;
+  /** Wird nach einem erfolgreichen Import aufgerufen, z. B. um Buchungen und Konten neu zu laden. */
   onImported: () => void;
 }
 
-export default function CsvImport({ onImported }: Props) {
+export default function CsvImport({ accounts, onCreateAccount, onImported }: Props) {
   const [options, setOptions] = useState<ImportOptions>({ maxFileBytes: 0, profiles: [] });
   const [profileId, setProfileId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [step, setStep] = useState<Step>({ kind: "select" });
   const [problem, setProblem] = useState<Problem | null>(null);
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
+  const [accountId, setAccountId] = useState<number | null>(null); // für Datensätze ohne eigene IBAN
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef(0); // verwirft Antworten auf überholte Anfragen
@@ -66,6 +69,7 @@ export default function CsvImport({ onImported }: Props) {
     setStep({ kind: "checking" });
     setProblem(null);
     setIncludeDuplicates(false);
+    setAccountId(null);
     try {
       const result = await previewImport(id, f);
       if (request === requestRef.current) setStep({ kind: "preview", preview: result });
@@ -82,6 +86,7 @@ export default function CsvImport({ onImported }: Props) {
     setStep({ kind: "select" });
     setProblem(null);
     setIncludeDuplicates(false);
+    setAccountId(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -109,7 +114,7 @@ export default function CsvImport({ onImported }: Props) {
     setStep({ kind: "importing", preview: step.preview });
     setProblem(null);
     try {
-      const result = await runImport(profileId, file, includeDuplicates);
+      const result = await runImport(profileId, file, includeDuplicates, accountId);
       reset();
       setStep({ kind: "done", result });
       onImported();
@@ -137,6 +142,13 @@ export default function CsvImport({ onImported }: Props) {
           <Stat label="Fehlerhaft" value={result.invalid} />
         </dl>
         <p className="hint">Die Umsätze stehen in der Kategorie „{result.category}“ im Monat ihres Buchungstags.</p>
+        {result.accounts
+          .filter((a) => a.created)
+          .map((a) => (
+            <p className="hint" key={a.id}>
+              Neues Konto angelegt: {a.name}
+            </p>
+          ))}
         <div className="actions">
           <button className="ghost" onClick={reset}>
             Weitere Datei importieren
@@ -206,6 +218,10 @@ export default function CsvImport({ onImported }: Props) {
       {preview && (
         <ImportPreview
           preview={preview}
+          accounts={accounts}
+          accountId={accountId}
+          onAccountChange={setAccountId}
+          onCreateAccount={onCreateAccount}
           includeDuplicates={includeDuplicates}
           onIncludeDuplicates={setIncludeDuplicates}
           importing={step.kind === "importing"}

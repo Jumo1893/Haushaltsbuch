@@ -1,8 +1,15 @@
-import { dateFormat, eur, parseDate } from "../format";
-import type { ImportPreview as Preview, ImportRow } from "../types";
+import { useId } from "react";
+import { dateFormat, eur, formatIban, parseDate } from "../format";
+import type { Account, ImportAccount, ImportPreview as Preview, ImportRow, NewAccount } from "../types";
+import AccountSelect from "./AccountSelect";
 
 interface Props {
   preview: Preview;
+  accounts: Account[];
+  /** Konto für Datensätze ohne eigene IBAN */
+  accountId: number | null;
+  onAccountChange: (id: number) => void;
+  onCreateAccount: (account: NewAccount) => Promise<Account>;
   includeDuplicates: boolean;
   onIncludeDuplicates: (include: boolean) => void;
   importing: boolean;
@@ -39,9 +46,45 @@ function Row({ row }: { row: ImportRow }) {
   );
 }
 
-export default function ImportPreview({ preview, includeDuplicates, onIncludeDuplicates, importing, onConfirm, onCancel }: Props) {
+/** z. B. „1 Datensatz“, „5 Datensätze“ */
+const records = (n: number) => `${n} ${n === 1 ? "Datensatz" : "Datensätze"}`;
+
+function AccountRow({ account }: { account: ImportAccount & { iban: string } }) {
+  const iban = formatIban(account.iban);
+  const isNew = account.accountId === null;
+  // Die IBAN nur nennen, wenn sie nicht ohnehin der Name des Kontos ist
+  const info = [account.accountName !== iban && iban, isNew && "wird beim Import angelegt"].filter(Boolean).join(" · ");
+  return (
+    <li>
+      <div>
+        {account.accountName}
+        {isNew && <span className="badge">Neues Konto</span>}
+        {info && <small>{info}</small>}
+      </div>
+      <span className="count">{records(account.new + account.duplicate)}</span>
+    </li>
+  );
+}
+
+export default function ImportPreview({
+  preview,
+  accounts,
+  accountId,
+  onAccountChange,
+  onCreateAccount,
+  includeDuplicates,
+  onIncludeDuplicates,
+  importing,
+  onConfirm,
+  onCancel,
+}: Props) {
+  const selectId = useId();
   const { counts, sample, duplicates, errors, skipped } = preview;
   const toImport = counts.new + (includeDuplicates ? counts.duplicate : 0);
+  const withIban = preview.accounts.filter((a): a is ImportAccount & { iban: string } => a.iban !== null);
+  const withoutIban = preview.accounts.find((a) => a.iban === null);
+  // Für Datensätze ohne IBAN muss ein Konto gewählt sein, sofern welche importiert werden
+  const needsAccount = !!withoutIban && withoutIban.new + (includeDuplicates ? withoutIban.duplicate : 0) > 0;
 
   return (
     <div className="preview">
@@ -56,6 +99,38 @@ export default function ImportPreview({ preview, includeDuplicates, onIncludeDup
         {counts.skipped > 0 && <Stat label="Nicht übernommen" value={counts.skipped} />}
         <Stat label="Fehlerhaft" value={counts.invalid} />
       </dl>
+
+      {withIban.length > 0 && (
+        <>
+          <h3>{withIban.length === 1 ? "Konto" : "Konten"}</h3>
+          <ul className="rows">
+            {withIban.map((a) => (
+              <AccountRow key={a.iban} account={a} />
+            ))}
+          </ul>
+        </>
+      )}
+
+      {withoutIban && (
+        <div className="import-account">
+          <label htmlFor={selectId}>
+            {withIban.length ? `Konto für ${records(withoutIban.new + withoutIban.duplicate)} ohne IBAN` : "Konto"}
+          </label>
+          <AccountSelect
+            id={selectId}
+            accounts={accounts}
+            value={accountId}
+            disabled={importing}
+            onChange={onAccountChange}
+            onCreate={onCreateAccount}
+          />
+          {!withIban.length && (
+            <small className="hint">
+              Die Datei enthält keine IBAN des eigenen Kontos. Bitte wähle, zu welchem Konto die Umsätze gehören.
+            </small>
+          )}
+        </div>
+      )}
 
       {sample.length > 0 ? (
         <>
@@ -116,8 +191,8 @@ export default function ImportPreview({ preview, includeDuplicates, onIncludeDup
       )}
 
       <div className="actions">
-        <button className="add" disabled={importing || toImport === 0} onClick={onConfirm}>
-          {importing ? "Wird importiert …" : `${toImport} ${toImport === 1 ? "Datensatz" : "Datensätze"} importieren`}
+        <button className="add" disabled={importing || toImport === 0 || (needsAccount && accountId === null)} onClick={onConfirm}>
+          {importing ? "Wird importiert …" : `${records(toImport)} importieren`}
         </button>
         <button className="ghost" disabled={importing} onClick={onCancel}>
           Abbrechen

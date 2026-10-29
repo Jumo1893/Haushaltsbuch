@@ -2,7 +2,8 @@
 // und weder auf der Platte noch in der Datenbank abgelegt.
 
 const express = require("express");
-const { ImportError, analyzeFile, markDuplicates, countStatuses, buildPreview } = require("./analyze");
+const { ImportError, analyzeFile, markDuplicates, ownIban, groupByIban, countStatuses, buildPreview } = require("./analyze");
+const { accountsForIbans } = require("../accounts");
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Kategorie für importierte Umsätze, bis es eine Kategorisierung gibt */
@@ -39,13 +40,59 @@ async function countExisting(db, rows) {
   return new Map(found.map((f) => [f.import_hash, f.n]));
 }
 
-async function insertTransactions(db, importId, records) {
+/** Konten je eigener IBAN für die Vorschau; accountId null: Das Konto wird beim Import angelegt bzw. gewählt. */
+async function previewAccounts(db, rows) {
+  const groups = groupByIban(rows);
+  const known = await accountsForIbans(db, groups.map((g) => g.iban).filter(Boolean));
+  return groups.map(({ iban, ...counts }) => {
+    const account = iban ? known.get(iban) : null;
+    return { iban, accountId: account?.id ?? null, accountName: account?.name ?? null, ...counts };
+  });
+}
+
+/** Im Import-Dialog gewähltes Konto für Umsätze ohne eigene IBAN, null wenn keins gewählt ist */
+async function chosenAccount(db, value) {
+  if (!value) return null;
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < 1) throw new ImportError(400, "Ungültiges Konto.");
+  // FOR KEY SHARE: Bis zum Ende des Imports lässt sich das Konto nicht löschen
+  const { rows } = await db.query("SELECT id, name FROM accounts WHERE id = $1 FOR KEY SHARE", [id]);
+  if (!rows.length) throw new ImportError(400, "Das gewählte Konto gibt es nicht.");
+  return rows[0];
+}
+
+/**
+ * Ordnet jedem Umsatz ein Konto zu: über die eigene IBAN aus der Datei, für unbekannte IBANs wird ein
+ * Konto angelegt. Umsätze ohne IBAN gehen in das gewählte Konto.
+ * Liefert die Konto-ID je Umsatz und die Konten mit der Anzahl ihrer Umsätze.
+ */
+async function assignAccounts(db, records, accountParam) {
+  const withoutIban = records.filter((r) => !ownIban(r)).length;
+  const chosen = withoutIban ? await chosenAccount(db, accountParam) : null;
+  if (withoutIban && !chosen) {
+    const subject = withoutIban === 1 ? "Ein Umsatz hat" : `${withoutIban} Umsätze haben`;
+    throw new ImportError(400, `${subject} keine IBAN des eigenen Kontos. Bitte ein Konto dafür wählen.`);
+  }
+  const byIban = await accountsForIbans(db, [...new Set(records.map(ownIban).filter(Boolean))], true);
+  const accounts = new Map();
+  const ids = records.map((record) => {
+    const iban = ownIban(record);
+    const account = iban ? byIban.get(iban) : { ...chosen, isNew: false };
+    const summary = accounts.get(account.id) ?? { id: account.id, name: account.name, created: account.isNew, imported: 0 };
+    summary.imported++;
+    accounts.set(account.id, summary);
+    return account.id;
+  });
+  return { ids, accounts: [...accounts.values()] };
+}
+
+async function insertTransactions(db, importId, records, accountIds) {
   const column = (fn) => records.map(fn);
   await db.query(
-    `INSERT INTO transactions (type, amount, category, date, counterparty, purpose, details, import_id, import_hash)
-     SELECT t.type, t.amount, $1, t.date, t.counterparty, t.purpose, t.details::jsonb, $2, t.hash
-     FROM unnest($3::text[], $4::numeric[], $5::date[], $6::text[], $7::text[], $8::text[], $9::text[])
-       AS t(type, amount, date, counterparty, purpose, details, hash)`,
+    `INSERT INTO transactions (type, amount, category, date, counterparty, purpose, details, import_id, import_hash, account_id)
+     SELECT t.type, t.amount, $1, t.date, t.counterparty, t.purpose, t.details::jsonb, $2, t.hash, t.account_id
+     FROM unnest($3::text[], $4::numeric[], $5::date[], $6::text[], $7::text[], $8::text[], $9::text[], $10::int[])
+       AS t(type, amount, date, counterparty, purpose, details, hash, account_id)`,
     [
       IMPORT_CATEGORY,
       importId,
@@ -56,6 +103,7 @@ async function insertTransactions(db, importId, records) {
       column((r) => r.purpose),
       column((r) => JSON.stringify(r.details)),
       column((r) => r.hash),
+      accountIds,
     ],
   );
 }
@@ -86,7 +134,12 @@ function createImportRouter(pool, profiles) {
   router.post("/imports/preview", fileBody, asyncRoute(async (req, res) => {
     const { profile, fileName, rows } = readUpload(req, profiles);
     markDuplicates(rows, await countExisting(pool, rows));
-    res.json({ profile: { id: profile.id, name: profile.name }, fileName, ...buildPreview(rows) });
+    res.json({
+      profile: { id: profile.id, name: profile.name },
+      fileName,
+      ...buildPreview(rows),
+      accounts: await previewAccounts(pool, rows),
+    });
   }));
 
   // Import: liest die Datei erneut und speichert alle gültigen Umsätze in einer Transaktion.
@@ -100,14 +153,17 @@ function createImportRouter(pool, profiles) {
       await client.query("SELECT pg_advisory_xact_lock(hashtext('csv-import'))");
       markDuplicates(rows, await countExisting(client, rows));
       const counts = countStatuses(rows);
-      const toSave = rows.filter((r) => r.status === "new" || (includeDuplicates && r.status === "duplicate"));
+      const toSave = rows
+        .filter((r) => r.status === "new" || (includeDuplicates && r.status === "duplicate"))
+        .map((r) => r.record);
+      const { ids, accounts } = await assignAccounts(client, toSave, req.query.account);
       const duplicatesSkipped = includeDuplicates ? 0 : counts.duplicate;
       const { rows: [run] } = await client.query(
         `INSERT INTO imports (profile_id, profile_name, file_name, imported_count, duplicate_count, skipped_count, invalid_count)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
         [profile.id, profile.name, fileName, toSave.length, duplicatesSkipped, counts.skipped, counts.invalid],
       );
-      if (toSave.length) await insertTransactions(client, run.id, toSave.map((r) => r.record));
+      if (toSave.length) await insertTransactions(client, run.id, toSave, ids);
       await client.query("COMMIT");
       res.status(201).json({
         importId: run.id,
@@ -116,6 +172,7 @@ function createImportRouter(pool, profiles) {
         skipped: counts.skipped,
         invalid: counts.invalid,
         category: IMPORT_CATEGORY,
+        accounts,
       });
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});

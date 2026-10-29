@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parseCsv } = require("../import/csv");
 const { loadProfiles, compileProfile } = require("../import/profiles");
-const { ImportError, analyzeFile, markDuplicates, countStatuses, buildPreview } = require("../import/analyze");
+const { ImportError, analyzeFile, markDuplicates, groupByIban, countStatuses, buildPreview } = require("../import/analyze");
 
 const camt = loadProfiles(path.join(__dirname, "..", "import-profiles")).get("csv-camt-v8");
 const fixture = fs.readFileSync(path.join(__dirname, "fixtures", "csv-camt-v8.csv"));
@@ -206,6 +206,38 @@ test("Vorschau: Anzahlen, erste Datensätze, Duplikate, Fehler und gruppierte Au
   assert.deepEqual(preview.skipped, [{ reason: "Vorgemerkter Umsatz (noch nicht gebucht)", count: 1 }]);
 });
 
+test("Konten: CSV-CAMT V8 liefert die eigene IBAN, Duplikate werden je Konto gezählt", () => {
+  const rows = analyzeFile(fixture, camt);
+  markDuplicates(rows, new Map([[byLine(rows)[3].record.hash, 1]]));
+  assert.deepEqual(groupByIban(rows), [{ iban: "DE00123456780000000001", new: 6, duplicate: 1 }]);
+});
+
+test("Konten: mehrere eigene Konten in einer Datei, Schreibweise der IBAN egal, Zeilen ohne IBAN extra", () => {
+  const profile = compileProfile("mehrere-konten", {
+    name: "Mehrere Konten",
+    delimiter: ";",
+    dateFormats: ["DD.MM.YYYY"],
+    decimalSeparator: ",",
+    columns: { account: "Konto", date: "Datum", amount: "Betrag" },
+  });
+  const rows = analyzeFile(
+    csv([
+      "Konto;Datum;Betrag",
+      "DE89 3704 0044 0532 0130 00;01.02.2026;-1,00",
+      ";01.02.2026;-2,00",
+      "de89370400440532013000;02.02.2026;-3,00",
+      "GB82WEST12345698765432;01.02.2026;4,00",
+      "GB82WEST12345698765432;01.02.2026;0,00",
+    ]),
+    profile,
+  );
+  assert.deepEqual(groupByIban(rows), [
+    { iban: "DE89370400440532013000", new: 2, duplicate: 0 },
+    { iban: null, new: 1, duplicate: 0 },
+    { iban: "GB82WEST12345698765432", new: 1, duplicate: 0 },
+  ]);
+});
+
 test("Vorschau: höchstens zehn Beispielzeilen", () => {
   const lines = ["Datum;Betrag;Name;Zweck", ...Array.from({ length: 25 }, (_, i) => `01.02.2026;-${i + 1},00;X;Y`)];
   const preview = buildPreview(markDuplicates(analyzeFile(csv(lines), simple), new Map()));
@@ -223,6 +255,7 @@ test("Trade Republic: Beispieldatei wird vollständig gelesen", () => {
   assert.deepEqual(lines[11], { line: 11, status: "skipped", reason: "Keine Geldbewegung (Betrag leer oder 0,00)" });
   assert.equal(lines[13].reason, "Unlesbarer Betrag „-1.234567“ in Spalte „amount“");
   assert.equal(lines[14].reason, "Ungültiges Datum „2026-02-30“ in Spalte „date“");
+  assert.deepEqual(groupByIban(rows), [{ iban: null, new: 11, duplicate: 0 }], "ohne eigene IBAN, Konto wird gewählt");
 });
 
 test("Trade Republic: Gebühren und Steuern sind im Buchungsbetrag enthalten", () => {

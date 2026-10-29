@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const { CsvError, parseCsv, dropLines } = require("./csv");
 const { decode, cleanText, neutralizeFormula } = require("./values");
+const { normalizeIban } = require("../accounts");
 
 const MAX_ROWS = 10000;
 const SAMPLE_SIZE = 10;
@@ -164,6 +165,25 @@ function markDuplicates(rows, existing) {
   return rows;
 }
 
+/** IBAN des eigenen Kontos aus der Datei (Feld account), normalisiert; "" wenn sie fehlt */
+const ownIban = (record) => normalizeIban(record.details.account);
+
+/**
+ * Gültige Umsätze je eigener IBAN, in der Reihenfolge der Datei: [{ iban, new, duplicate }].
+ * Umsätze ohne IBAN stehen unter iban null.
+ */
+function groupByIban(rows) {
+  const groups = new Map();
+  for (const { status, record } of rows) {
+    if (!record) continue;
+    const iban = ownIban(record) || null;
+    const group = groups.get(iban) ?? { iban, new: 0, duplicate: 0 };
+    group[status]++;
+    groups.set(iban, group);
+  }
+  return [...groups.values()];
+}
+
 function countStatuses(rows) {
   const counts = { total: rows.length, new: 0, duplicate: 0, skipped: 0, invalid: 0 };
   for (const row of rows) counts[row.status]++;
@@ -192,4 +212,4 @@ function buildPreview(rows) {
   };
 }
 
-module.exports = { MAX_ROWS, ImportError, analyzeFile, markDuplicates, countStatuses, buildPreview };
+module.exports = { MAX_ROWS, ImportError, analyzeFile, markDuplicates, ownIban, groupByIban, countStatuses, buildPreview };

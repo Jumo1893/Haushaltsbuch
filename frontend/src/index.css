@@ -70,6 +70,8 @@ h3{font-size:.95rem;font-weight:600;margin:16px 0 4px}
 .rows li{grid-template-columns:minmax(0,1fr) auto}
 .rows small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted);vertical-align:1px}
+.count{color:var(--muted);font-size:.9rem;white-space:nowrap}
+.import-account{margin-top:16px}
 details{margin-top:12px}
 summary{cursor:pointer;font-weight:500}
 .issues li{display:block;padding:6px 0;font-size:.9rem}
@@ -83,6 +85,7 @@ input:disabled,.seg label:has(input:disabled){opacity:.65;cursor:default}
 dialog.edit{width:min(560px,calc(100% - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}
 dialog.edit::backdrop{background:rgb(0 0 0/.45)}
 dialog.edit .hint{margin:0 0 12px}
+dialog.edit form .hint{margin:6px 0 0}
 dialog.edit .errbox{margin:0 0 12px}
 .source{margin:0 0 8px;font-size:.95rem}
 .source div{margin-bottom:6px}

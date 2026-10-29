@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api";
-import type { NewTransaction, Transaction, TransactionChanges } from "../types";
+import type { Account, NewAccount, NewTransaction, Transaction, TransactionChanges } from "../types";
 import TransactionForm from "./TransactionForm";
 
 interface Props {
   tx: Transaction;
+  accounts: Account[];
+  onCreateAccount: (account: NewAccount) => Promise<Account>;
   /** Speichert die geänderten Felder; wirft bei einem Fehler. */
   onSave: (changes: TransactionChanges) => Promise<void>;
   onClose: () => void;
@@ -16,7 +18,7 @@ const diff = (tx: Transaction, updated: NewTransaction) =>
     Object.entries(updated).filter(([key, value]) => value !== tx[key as keyof NewTransaction]),
   ) as TransactionChanges;
 
-export default function EditTransactionDialog({ tx, onSave, onClose }: Props) {
+export default function EditTransactionDialog({ tx, accounts, onCreateAccount, onSave, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const [error, setError] = useState("");
@@ -65,7 +67,7 @@ export default function EditTransactionDialog({ tx, onSave, onClose }: Props) {
             )}
           </dl>
           <p className="hint">
-            Aus einem CSV-Import: Art, Betrag und Datum stammen von der Bank und lassen sich nicht ändern.
+            Aus einem CSV-Import: Art, Betrag, Datum und Konto stehen durch den Import fest und lassen sich nicht ändern.
           </p>
         </>
       )}
@@ -76,6 +78,8 @@ export default function EditTransactionDialog({ tx, onSave, onClose }: Props) {
       )}
       <TransactionForm
         initial={tx}
+        accounts={accounts}
+        onCreateAccount={onCreateAccount}
         lockBankData={imported}
         submitLabel="Änderungen speichern"
         onSubmit={handleSubmit}
