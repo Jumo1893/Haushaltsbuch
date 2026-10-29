@@ -3,6 +3,7 @@ const express = require("express");
 const { Pool } = require("pg");
 const { loadProfiles } = require("./import/profiles");
 const { createImportRouter } = require("./import/routes");
+const { readTransaction, lockedFields } = require("./transactions");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const profiles = loadProfiles(path.join(__dirname, "import-profiles"));
@@ -74,17 +75,36 @@ app.get("/api/transactions", async (req, res) => {
 });
 
 app.post("/api/transactions", async (req, res) => {
-  const { type, amount, category, date, note } = req.body || {};
-  const amt = Number(amount);
-  if (!["in", "out"].includes(type) || !(amt > 0) || !category || !/^\d{4}-\d{2}-\d{2}$/.test(date || ""))
-    return res.status(400).json({ error: "Ungültige Eingabe" });
+  const tx = readTransaction(req.body || {});
+  if (!tx) return res.status(400).json({ error: "Ungültige Eingabe" });
   try {
     const { rows } = await pool.query(
       `INSERT INTO transactions (type, amount, category, date, note)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [type, amt.toFixed(2), String(category).slice(0, 40), date, String(note || "").slice(0, 60)]);
+      [tx.type, tx.amount, tx.category, tx.date, tx.note]);
     const r = await pool.query(`${SELECT} WHERE id = $1`, [rows[0].id]);
     res.status(201).json(r.rows[0]);
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Ändert nur die übergebenen Felder. Bei importierten Buchungen bleiben Art, Betrag und Datum wie von der Bank.
+app.patch("/api/transactions/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  const changes = readTransaction(req.body || {}, true);
+  if (!changes || !Object.keys(changes).length) return res.status(400).json({ error: "Ungültige Eingabe" });
+  try {
+    const { rows } = await pool.query("SELECT import_id FROM transactions WHERE id = $1", [id]);
+    if (!rows.length) return res.status(404).json({ error: "Buchung nicht gefunden" });
+    if (rows[0].import_id !== null && lockedFields(changes).length)
+      return res.status(409).json({ error: "Bei importierten Buchungen lassen sich nur Kategorie und Notiz ändern." });
+    // Spaltennamen stammen aus readTransaction, nicht aus der Anfrage
+    const fields = Object.keys(changes);
+    await pool.query(
+      `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = $1`,
+      [id, ...fields.map((f) => changes[f])]);
+    const r = await pool.query(`${SELECT} WHERE id = $1`, [id]);
+    res.json(r.rows[0]);
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 

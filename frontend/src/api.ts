@@ -5,6 +5,7 @@ import type {
   NewTransaction,
   ProfileMismatch,
   Transaction,
+  TransactionChanges,
 } from "./types";
 
 /** Fehlerantwort der API; `body` enthält die Meldung des Servers, falls vorhanden. */
@@ -33,6 +34,13 @@ export const createTransaction = (tx: NewTransaction) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(tx),
+  });
+
+export const updateTransaction = (id: number, changes: TransactionChanges) =>
+  request<Transaction>(`transactions/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
   });
 
 export const deleteTransaction = (id: number) => request<null>(`transactions/${id}`, { method: "DELETE" });

@@ -13,7 +13,9 @@ Alles läuft in Containern mit [Podman](https://podman.io/), mehr braucht es fü
 Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker compose` ersetzen.
 
 ## Funktionen
-- Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Kategorie und Notiz anlegen und löschen
+- Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Kategorie und Notiz anlegen, bearbeiten und löschen.
+  Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen lassen sich Kategorie und
+  Notiz ändern; Art, Betrag und Datum stammen von der Bank und bleiben, wie sie sind.
 - Monatsansicht mit Blättern zwischen den Monaten
 - Saldo sowie Summe der Einnahmen und Ausgaben im Monat
 - Ausgaben nach Kategorie als Balkendiagramm
@@ -209,8 +211,9 @@ Nach Änderungen am Backend (`backend/`) das Backend neu bauen:
 Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neuer IP-Adresse.
 
 ## Tests
-Die Unit-Tests für den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
-Duplikaterkennung) laufen mit dem Test-Runner von Node.js 20+ und brauchen keine Datenbank:
+Die Unit-Tests für die Prüfung von Buchungen und den CSV-Import (Parser, Zeichenkodierung, Datums- und
+Zahlenformate, Profilprüfung, Duplikaterkennung) laufen mit dem Test-Runner von Node.js 20+ und brauchen
+keine Datenbank:
 ```
 cd backend
 npm test
@@ -222,6 +225,7 @@ Die Testdateien enthalten nur erfundene Daten.
 ├── docker-compose.yml        Alle Dienste (db, backend, frontend)
 ├── backend/
 │   ├── server.js             Express-API und Tabellen-Setup
+│   ├── transactions.js       Prüfung der Eingaben beim Anlegen und Ändern von Buchungen
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -240,7 +244,7 @@ Die Testdateien enthalten nur erfundene Daten.
         ├── index.css         Styles inkl. Dark Mode
         └── components/       MonthNav, BalanceCard, TransactionForm,
                               CategoryBreakdown, TransactionList,
-                              CsvImport, ImportPreview
+                              EditTransactionDialog, CsvImport, ImportPreview
 ```
 
 ## Datenbank
@@ -310,6 +314,7 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/health`                        | Statusprüfung, liefert `{ "ok": true }` |
 | `GET`    | `/api/transactions?month=YYYY-MM`    | Buchungen eines Monats, neueste zuerst |
 | `POST`   | `/api/transactions`                  | Buchung anlegen, liefert sie mit `201` zurück |
+| `PATCH`  | `/api/transactions/:id`              | Buchung ändern, nur die übergebenen Felder; liefert die geänderte Buchung |
 | `DELETE` | `/api/transactions/:id`              | Buchung löschen, `204` |
 | `GET`    | `/api/import-profiles`               | Importprofile und maximale Dateigröße |
 | `POST`   | `/api/imports/preview?profile=ID`    | Datei prüfen und Vorschau liefern, speichert nichts |
@@ -321,6 +326,10 @@ Body für `POST /api/transactions`:
 ```
 Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`.
 Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`).
+
+Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
+`{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category` und
+`note` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
 
 Für die Import-Endpunkte ist der Body die CSV-Datei selbst (`Content-Type: application/octet-stream`), der
 Dateiname steht URI-kodiert im Header `X-File-Name`. Passt die Datei nicht, antwortet das Backend mit `400`, `413`,
