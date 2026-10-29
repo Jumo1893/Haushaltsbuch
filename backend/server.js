@@ -3,18 +3,20 @@ const express = require("express");
 const { Pool } = require("pg");
 const { loadProfiles } = require("./import/profiles");
 const { createImportRouter } = require("./import/routes");
-const { readTransaction, lockedFields } = require("./transactions");
+const { readTransaction, lockedFields, isMonth, accountParam, readListQuery } = require("./transactions");
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
+const { TRANSFER, ACCOUNTS, monthlyStats } = require("./stats");
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
+// als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, options: "-c jit=off" });
 const profiles = loadProfiles(path.join(__dirname, "import-profiles"));
 const app = express();
 app.use(express.json());
 
-const SELECT = `SELECT id, type, amount::float8 AS amount, category,
-  to_char(date, 'YYYY-MM-DD') AS date, note, counterparty, purpose, import_id AS "importId",
-  account_id AS "accountId" FROM transactions`;
-const ACCOUNT_COLUMNS = "id, name, kind, institution, iban";
+const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
+  to_char(t.date, 'YYYY-MM-DD') AS date, t.note, t.counterparty, t.purpose, t.import_id AS "importId",
+  t.account_id AS "accountId", ${TRANSFER} AS transfer FROM transactions t`;
 
 // Fehlercodes von Postgres
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -62,6 +64,10 @@ const SCHEMA = [
   )`,
   "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id)",
   "CREATE INDEX IF NOT EXISTS idx_tx_account_id ON transactions(account_id)",
+  // Kontostand laut Bank an einem Tag (beides oder nichts), daraus ergeben sich die Kontostände
+  `ALTER TABLE accounts
+    ADD COLUMN IF NOT EXISTS bank_balance NUMERIC(12,2),
+    ADD COLUMN IF NOT EXISTS bank_balance_date DATE`,
 ];
 
 /**
@@ -140,15 +146,18 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.use("/api", createImportRouter(pool, profiles));
 
+// Buchungen eines Monats (month) oder die neuesten (limit), neueste zuerst
 app.get("/api/transactions", async (req, res) => {
-  const month = String(req.query.month || "");
-  if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: "month=YYYY-MM erforderlich" });
-  const account = req.query.account ? Number(req.query.account) : null;
-  if (account !== null && !(Number.isInteger(account) && account > 0)) return res.status(400).json({ error: "Ungültiges Konto" });
+  const { month, limit, account, error } = readListQuery(req.query);
+  if (error) return res.status(400).json({ error });
   try {
-    const { rows } = await pool.query(
-      `${SELECT} WHERE to_char(date,'YYYY-MM') = $1 AND ($2::int IS NULL OR account_id = $2)
-       ORDER BY date DESC, id DESC`, [month, account]);
+    const { rows } = month
+      ? await pool.query(
+        `${SELECT} WHERE to_char(t.date,'YYYY-MM') = $1 AND ($2::int IS NULL OR t.account_id = $2)
+         ORDER BY t.date DESC, t.id DESC`, [month, account])
+      : await pool.query(
+        `${SELECT} WHERE $2::int IS NULL OR t.account_id = $2 ORDER BY t.date DESC, t.id DESC LIMIT $1`,
+        [limit, account]);
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
@@ -161,7 +170,7 @@ app.post("/api/transactions", async (req, res) => {
       `INSERT INTO transactions (type, amount, category, date, note, account_id)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
       [tx.type, tx.amount, tx.category, tx.date, tx.note, tx.account_id]);
-    const r = await pool.query(`${SELECT} WHERE id = $1`, [rows[0].id]);
+    const r = await pool.query(`${SELECT} WHERE t.id = $1`, [rows[0].id]);
     res.status(201).json(r.rows[0]);
   } catch (e) {
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(400).json({ error: "Das gewählte Konto gibt es nicht." });
@@ -185,7 +194,7 @@ app.patch("/api/transactions/:id", async (req, res) => {
     await pool.query(
       `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = $1`,
       [id, ...fields.map((f) => changes[f])]);
-    const r = await pool.query(`${SELECT} WHERE id = $1`, [id]);
+    const r = await pool.query(`${SELECT} WHERE t.id = $1`, [id]);
     res.json(r.rows[0]);
   } catch (e) {
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(400).json({ error: "Das gewählte Konto gibt es nicht." });
@@ -202,9 +211,12 @@ app.delete("/api/transactions/:id", async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
+/** Ein Konto wie in GET /api/accounts, mit Kontostand */
+const findAccount = async (id) => (await pool.query(`${ACCOUNTS} WHERE a.id = $1`, [id])).rows[0];
+
 app.get("/api/accounts", async (_req, res) => {
   try {
-    const { rows } = await pool.query(`SELECT ${ACCOUNT_COLUMNS} FROM accounts ORDER BY lower(name), id`);
+    const { rows } = await pool.query(`${ACCOUNTS} ORDER BY lower(a.name), a.id`);
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
@@ -214,9 +226,10 @@ app.post("/api/accounts", async (req, res) => {
   if (error) return res.status(400).json({ error });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO accounts (name, kind, institution, iban) VALUES ($1, $2, $3, $4) RETURNING ${ACCOUNT_COLUMNS}`,
-      [values.name, values.kind, values.institution, values.iban]);
-    res.status(201).json(rows[0]);
+      `INSERT INTO accounts (name, kind, institution, iban, bank_balance, bank_balance_date)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [values.name, values.kind, values.institution, values.iban, values.bank_balance ?? null, values.bank_balance_date ?? null]);
+    res.status(201).json(await findAccount(rows[0].id));
   } catch (e) {
     if (e.code === UNIQUE_VIOLATION) return res.status(409).json({ error: "Es gibt schon ein Konto mit dieser IBAN." });
     console.error(e); res.status(500).json({ error: "Serverfehler" });
@@ -233,11 +246,11 @@ app.patch("/api/accounts/:id", async (req, res) => {
   const fields = Object.keys(values);
   if (!fields.length) return res.status(400).json({ error: "Ungültige Eingabe" });
   try {
-    const { rows } = await pool.query(
-      `UPDATE accounts SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+    const { rowCount } = await pool.query(
+      `UPDATE accounts SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = $1`,
       [id, ...fields.map((f) => values[f])]);
-    if (!rows.length) return res.status(404).json({ error: "Konto nicht gefunden" });
-    res.json(rows[0]);
+    if (!rowCount) return res.status(404).json({ error: "Konto nicht gefunden" });
+    res.json(await findAccount(id));
   } catch (e) {
     if (e.code === UNIQUE_VIOLATION) return res.status(409).json({ error: "Es gibt schon ein Konto mit dieser IBAN." });
     console.error(e); res.status(500).json({ error: "Serverfehler" });
@@ -255,6 +268,16 @@ app.delete("/api/accounts/:id", async (req, res) => {
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(409).json({ error: "Das Konto enthält noch Buchungen." });
     console.error(e); res.status(500).json({ error: "Serverfehler" });
   }
+});
+
+// Werte je Monat und Konto für Verlauf und Übersicht, bis zum Monat until (der aktuelle Monat des Browsers)
+app.get("/api/stats/months", async (req, res) => {
+  if (!isMonth(req.query.until)) return res.status(400).json({ error: "until=YYYY-MM erforderlich" });
+  const account = accountParam(req.query.account);
+  if (Number.isNaN(account)) return res.status(400).json({ error: "Ungültiges Konto" });
+  try {
+    res.json(await monthlyStats(pool, req.query.until, account));
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
 init().then(() => app.listen(3000, () => console.log("API läuft auf :3000")))

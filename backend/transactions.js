@@ -51,4 +51,36 @@ function readTransaction(body, partial = false) {
 /** Felder einer Änderung, die bei einer importierten Buchung nicht erlaubt sind */
 const lockedFields = (changes) => BANK_FIELDS.filter((field) => field in changes);
 
-module.exports = { BANK_FIELDS, isDate, readTransaction, lockedFields };
+/** true, wenn der Text ein Monat im Format YYYY-MM ist */
+const isMonth = (value) => typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+
+/** Konto aus dem Query-Parameter account: null ohne Angabe, NaN wenn ungültig */
+function accountParam(value) {
+  if (value === undefined || value === "") return null;
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : NaN;
+}
+
+/** Höchstzahl der Buchungen bei GET /api/transactions?limit= */
+const MAX_LIMIT = 100;
+
+/**
+ * Prüft die Parameter für die Liste der Buchungen: entweder month (Buchungen eines Monats) oder
+ * limit (die neuesten Buchungen), jeweils optional account. Liefert { month, account },
+ * { limit, account } oder { error }.
+ */
+function readListQuery(query) {
+  const account = accountParam(query.account);
+  if (Number.isNaN(account)) return { error: "Ungültiges Konto" };
+  if (query.month !== undefined) {
+    if (!isMonth(query.month)) return { error: "month=YYYY-MM erforderlich" };
+    return { month: query.month, account };
+  }
+  const limit = Number(query.limit);
+  if (query.limit === undefined || !(Number.isInteger(limit) && limit >= 1 && limit <= MAX_LIMIT)) {
+    return { error: `month=YYYY-MM oder limit=1 bis ${MAX_LIMIT} erforderlich` };
+  }
+  return { limit, account };
+}
+
+module.exports = { BANK_FIELDS, MAX_CENTS, isDate, isMonth, readTransaction, lockedFields, accountParam, readListQuery };

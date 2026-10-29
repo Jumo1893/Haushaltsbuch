@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isDate, readTransaction, lockedFields } = require("../transactions");
+const { isDate, isMonth, readTransaction, lockedFields, accountParam, readListQuery } = require("../transactions");
 
 const valid = () => ({
   type: "out",
@@ -82,6 +82,41 @@ test("importierte Buchungen: Art, Betrag, Datum und Konto sind gesperrt", () => 
   assert.deepEqual(lockedFields({ amount: "1.00", date: "2026-01-01", note: "" }), ["amount", "date"]);
   assert.deepEqual(lockedFields({ type: "in" }), ["type"]);
   assert.deepEqual(lockedFields({ account_id: 2, category: "Wohnen" }), ["account_id"]);
+});
+
+test("Liste: Buchungen eines Monats oder die neuesten, optional eines Kontos", () => {
+  assert.deepEqual(readListQuery({ month: "2026-10" }), { month: "2026-10", account: null });
+  assert.deepEqual(readListQuery({ month: "2026-10", account: "3" }), { month: "2026-10", account: 3 });
+  assert.deepEqual(readListQuery({ limit: "8" }), { limit: 8, account: null });
+  assert.deepEqual(readListQuery({ limit: "100", account: "2" }), { limit: 100, account: 2 });
+  assert.deepEqual(readListQuery({ month: "2026-10", limit: "abc" }), { month: "2026-10", account: null });
+});
+
+test("Liste: fehlende oder ungültige Parameter", () => {
+  const cases = {
+    "nichts angegeben": {},
+    "Monat 13": { month: "2026-13" },
+    "Monat ohne führende Null": { month: "2026-1" },
+    "Monat doppelt": { month: ["2026-10", "2026-11"] },
+    "Limit 0": { limit: "0" },
+    "Limit zu groß": { limit: "101" },
+    "Limit keine ganze Zahl": { limit: "2.5" },
+    "Konto 0": { month: "2026-10", account: "0" },
+    "Konto kein Zahl": { limit: "5", account: "abc" },
+  };
+  for (const [name, query] of Object.entries(cases)) assert.ok(readListQuery(query).error, name);
+});
+
+test("Monat und Konto aus Query-Parametern", () => {
+  assert.equal(isMonth("2026-01"), true);
+  assert.equal(isMonth("2026-12"), true);
+  assert.equal(isMonth("2026-00"), false);
+  assert.equal(isMonth(undefined), false);
+  assert.equal(accountParam(undefined), null);
+  assert.equal(accountParam(""), null);
+  assert.equal(accountParam("7"), 7);
+  assert.ok(Number.isNaN(accountParam("-1")));
+  assert.ok(Number.isNaN(accountParam(["1", "2"])));
 });
 
 test("Datum: Schaltjahre und Monatsenden", () => {

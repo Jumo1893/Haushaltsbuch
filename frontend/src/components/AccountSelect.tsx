@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Account, NewAccount } from "../types";
-import NewAccountDialog from "./NewAccountDialog";
+import AccountDialog from "./AccountDialog";
 
 /** Wert der Option, die den Dialog „Neues Konto“ öffnet */
 const NEW_ACCOUNT = "new";
@@ -37,8 +37,8 @@ export default function AccountSelect({ id, accounts, value, disabled, onChange,
         <option value={NEW_ACCOUNT}>Neues Konto anlegen …</option>
       </select>
       {creating && (
-        <NewAccountDialog
-          onCreate={async (account) => onChange((await onCreate(account)).id)}
+        <AccountDialog
+          onSave={async (account) => onChange((await onCreate(account)).id)}
           onClose={() => setCreating(false)}
         />
       )}

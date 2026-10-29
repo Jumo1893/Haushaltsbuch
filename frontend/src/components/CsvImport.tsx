@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, fetchImportOptions, previewImport, runImport } from "../api";
 import { megabytes } from "../format";
+import { Link } from "../router";
 import type { Account, ImportOptions, ImportPreview as Preview, ImportResult, NewAccount, ProfileMismatch } from "../types";
 import ImportPreview, { Stat } from "./ImportPreview";
 
@@ -21,12 +22,17 @@ const toProblem = (e: unknown, fallback: string): Problem =>
 
 interface Props {
   accounts: Account[];
+  /** Vorausgewähltes Konto für Datensätze ohne eigene IBAN, z. B. wenn der Import von einer Kontoseite kommt */
+  defaultAccountId?: number | null;
   onCreateAccount: (account: NewAccount) => Promise<Account>;
   /** Wird nach einem erfolgreichen Import aufgerufen, z. B. um Buchungen und Konten neu zu laden. */
   onImported: () => void;
 }
 
-export default function CsvImport({ accounts, onCreateAccount, onImported }: Props) {
+/** z. B. „1 Umsatz“, „5 Umsätze“ */
+const bookings = (n: number) => `${n} ${n === 1 ? "Umsatz" : "Umsätze"}`;
+
+export default function CsvImport({ accounts, defaultAccountId = null, onCreateAccount, onImported }: Props) {
   const [options, setOptions] = useState<ImportOptions>({ maxFileBytes: 0, profiles: [] });
   const [profileId, setProfileId] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -69,7 +75,7 @@ export default function CsvImport({ accounts, onCreateAccount, onImported }: Pro
     setStep({ kind: "checking" });
     setProblem(null);
     setIncludeDuplicates(false);
-    setAccountId(null);
+    setAccountId(accounts.some((a) => a.id === defaultAccountId) ? defaultAccountId : null);
     try {
       const result = await previewImport(id, f);
       if (request === requestRef.current) setStep({ kind: "preview", preview: result });
@@ -141,14 +147,25 @@ export default function CsvImport({ accounts, onCreateAccount, onImported }: Pro
           {result.skipped > 0 && <Stat label="Nicht übernommen" value={result.skipped} />}
           <Stat label="Fehlerhaft" value={result.invalid} />
         </dl>
+        {result.accounts.length > 0 && (
+          <ul className="rows">
+            {result.accounts.map((a) => (
+              <li key={a.id}>
+                <div>
+                  <Link to={`/konten/${a.id}`}>{a.name}</Link>
+                  {a.created && <span className="badge">Neues Konto</span>}
+                </div>
+                <span className="count">{bookings(a.imported)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <p className="hint">Die Umsätze stehen in der Kategorie „{result.category}“ im Monat ihres Buchungstags.</p>
-        {result.accounts
-          .filter((a) => a.created)
-          .map((a) => (
-            <p className="hint" key={a.id}>
-              Neues Konto angelegt: {a.name}
-            </p>
-          ))}
+        {result.accounts.some((a) => a.created) && (
+          <p className="hint">
+            Auf der Seite eines neuen Kontos lassen sich Name und Art ändern und der Kontostand mit der Bank abgleichen.
+          </p>
+        )}
         <div className="actions">
           <button className="ghost" onClick={reset}>
             Weitere Datei importieren

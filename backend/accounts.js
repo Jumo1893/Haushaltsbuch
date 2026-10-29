@@ -1,5 +1,7 @@
 // Konten: Prüfung der Eingaben und Zuordnung von Umsätzen über die eigene IBAN
 
+const { MAX_CENTS, isDate } = require("./transactions");
+
 /** Arten von Konten */
 const KINDS = ["giro", "savings", "depot", "credit_card", "cash", "other"];
 
@@ -20,9 +22,24 @@ function isIban(iban) {
 }
 
 /**
+ * Kontostand laut Bank an einem Tag, aus dem sich die Kontostände des Kontos ergeben.
+ * Betrag (darf negativ sein) und Datum gehören zusammen; beide null entfernen den Kontostand.
+ */
+function readBankBalance(amount, date) {
+  if (amount === null && date === null) return { values: { bank_balance: null, bank_balance_date: null } };
+  if (amount === null || date === null) return { error: "Bitte Kontostand und Datum zusammen angeben." };
+  const given = typeof amount === "number" || (typeof amount === "string" && amount.trim() !== "");
+  const cents = given ? Math.round(Number(amount) * 100) : NaN;
+  if (!(Math.abs(cents) <= MAX_CENTS)) return { error: "Der Kontostand ist ungültig." };
+  if (!isDate(date)) return { error: "Das Datum des Kontostands ist ungültig." };
+  return { values: { bank_balance: (cents / 100).toFixed(2), bank_balance_date: date } };
+}
+
+/**
  * Prüft die Felder eines Kontos und liefert { values } für die Datenbank oder { error } mit dem Grund.
  * Beim Anlegen müssen name und kind vorhanden sein. Mit partial (Ändern) werden nur die übergebenen
- * Felder geprüft und zurückgegeben.
+ * Felder geprüft und zurückgegeben. Der Kontostand laut Bank (bankBalance, bankBalanceDate) ist
+ * immer optional und wird zu den Spalten bank_balance und bank_balance_date.
  */
 function readAccount(body, partial = false) {
   const given = (key) => !partial || body[key] !== undefined;
@@ -40,6 +57,11 @@ function readAccount(body, partial = false) {
     const iban = normalizeIban(body.iban);
     if (iban && !isIban(iban)) return { error: "Die IBAN ist ungültig. Bitte auf Tippfehler prüfen." };
     values.iban = iban || null;
+  }
+  if (body.bankBalance !== undefined || body.bankBalanceDate !== undefined) {
+    const bank = readBankBalance(body.bankBalance ?? null, body.bankBalanceDate ?? null);
+    if (bank.error) return bank;
+    Object.assign(values, bank.values);
   }
   return { values };
 }

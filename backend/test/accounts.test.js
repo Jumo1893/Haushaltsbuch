@@ -61,6 +61,51 @@ test("Konto ändern: nur übergebene Felder, eine leere IBAN entfernt sie", () =
   assert.ok(readAccount({ name: "" }, true).error);
 });
 
+test("Kontostand laut Bank: Betrag und Datum werden zusammen gespeichert, auch negativ", () => {
+  assert.deepEqual(readAccount({ bankBalance: 1234.567, bankBalanceDate: "2026-10-29" }, true), {
+    values: { bank_balance: "1234.57", bank_balance_date: "2026-10-29" },
+  });
+  assert.deepEqual(readAccount({ bankBalance: "-89.9", bankBalanceDate: "2026-02-28" }, true).values, {
+    bank_balance: "-89.90",
+    bank_balance_date: "2026-02-28",
+  });
+  assert.equal(readAccount({ bankBalance: 0, bankBalanceDate: "2026-10-29" }, true).values.bank_balance, "0.00");
+  assert.deepEqual(readAccount({ ...valid(), bankBalance: 50, bankBalanceDate: "2026-10-01" }).values, {
+    name: "Girokonto",
+    kind: "giro",
+    institution: "BW-Bank",
+    iban: GIRO,
+    bank_balance: "50.00",
+    bank_balance_date: "2026-10-01",
+  });
+});
+
+test("Kontostand laut Bank: null entfernt ihn, ohne Angabe bleibt er unverändert", () => {
+  assert.deepEqual(readAccount({ bankBalance: null, bankBalanceDate: null }, true), {
+    values: { bank_balance: null, bank_balance_date: null },
+  });
+  assert.deepEqual(readAccount({ name: "Tagesgeld" }, true), { values: { name: "Tagesgeld" } });
+});
+
+test("Kontostand laut Bank: unvollständige oder ungültige Angaben werden mit Grund abgelehnt", () => {
+  const cases = {
+    "Datum fehlt": { bankBalance: 10 },
+    "Betrag fehlt": { bankBalanceDate: "2026-10-29" },
+    "Betrag null, Datum gesetzt": { bankBalance: null, bankBalanceDate: "2026-10-29" },
+    "Betrag leer": { bankBalance: " ", bankBalanceDate: "2026-10-29" },
+    "Betrag kein Zahl": { bankBalance: "viel", bankBalanceDate: "2026-10-29" },
+    "Betrag als Wahrheitswert": { bankBalance: true, bankBalanceDate: "2026-10-29" },
+    "Betrag zu groß": { bankBalance: -1e10, bankBalanceDate: "2026-10-29" },
+    "Datum gibt es nicht": { bankBalance: 10, bankBalanceDate: "2026-02-30" },
+    "Datum im falschen Format": { bankBalance: 10, bankBalanceDate: "29.10.2026" },
+  };
+  for (const [name, body] of Object.entries(cases)) {
+    const result = readAccount(body, true);
+    assert.equal(result.values, undefined, name);
+    assert.ok(result.error, name);
+  }
+});
+
 /** Datenbank-Attrappe: kennt das Girokonto und vergibt für neue Konten fortlaufende IDs */
 function fakeDb() {
   const db = {

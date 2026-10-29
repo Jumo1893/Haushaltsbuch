@@ -1,21 +1,24 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { ApiError } from "../api";
-import { ACCOUNT_KINDS, type AccountKind, type NewAccount } from "../types";
+import { formatIban } from "../format";
+import { ACCOUNT_KINDS, type Account, type AccountKind, type NewAccount } from "../types";
 
 interface Props {
-  /** Legt das Konto an; wirft bei einem Fehler. */
-  onCreate: (account: NewAccount) => Promise<void>;
+  /** Vorhandenes Konto zum Bearbeiten; ohne wird ein neues angelegt. */
+  account?: Account;
+  /** Speichert das Konto; wirft bei einem Fehler. */
+  onSave: (account: NewAccount) => Promise<void>;
   onClose: () => void;
 }
 
-export default function NewAccountDialog({ onCreate, onClose }: Props) {
+export default function AccountDialog({ account, onSave, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<AccountKind>("giro");
-  const [institution, setInstitution] = useState("");
-  const [iban, setIban] = useState("");
+  const [name, setName] = useState(account?.name ?? "");
+  const [kind, setKind] = useState<AccountKind>(account?.kind ?? "giro");
+  const [institution, setInstitution] = useState(account?.institution ?? "");
+  const [iban, setIban] = useState(account?.iban ? formatIban(account.iban) : "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -31,7 +34,7 @@ export default function NewAccountDialog({ onCreate, onClose }: Props) {
     e.stopPropagation(); // siehe unten: nicht an ein umgebendes Formular weitergeben
     setSaving(true);
     try {
-      await onCreate({ name: name.trim(), kind, institution: institution.trim(), iban: iban.replace(/\s+/g, "") || null });
+      await onSave({ name: name.trim(), kind, institution: institution.trim(), iban: iban.replace(/\s+/g, "") || null });
       close();
     } catch (err) {
       setError(err instanceof ApiError && err.body?.error ? err.body.error : "Speichern fehlgeschlagen.");
@@ -52,7 +55,7 @@ export default function NewAccountDialog({ onCreate, onClose }: Props) {
         onClose();
       }}
     >
-      <h2 id={`${id}-title`}>Neues Konto</h2>
+      <h2 id={`${id}-title`}>{account ? "Konto bearbeiten" : "Neues Konto"}</h2>
       {error && (
         <p className="errbox" role="alert">
           {error}
@@ -101,11 +104,14 @@ export default function NewAccountDialog({ onCreate, onClose }: Props) {
             value={iban}
             onChange={(e) => setIban(e.target.value)}
           />
-          <small className="hint">Umsätze mit dieser IBAN ordnet der CSV-Import automatisch diesem Konto zu.</small>
+          <small className="hint">
+            Umsätze mit dieser IBAN ordnet der CSV-Import automatisch diesem Konto zu. Überweisungen anderer eigener
+            Konten an diese IBAN gelten als Umbuchung.
+          </small>
         </div>
         <div className="full actions">
           <button className="add" type="submit" disabled={saving}>
-            {saving ? "Wird angelegt …" : "Konto anlegen"}
+            {saving ? "Wird gespeichert …" : account ? "Änderungen speichern" : "Konto anlegen"}
           </button>
           <button className="ghost" type="button" onClick={close}>
             Abbrechen
