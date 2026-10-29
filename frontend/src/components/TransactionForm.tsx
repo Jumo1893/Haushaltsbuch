@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { today } from "../format";
 import { CATEGORIES, type NewTransaction, type TxType } from "../types";
 
@@ -8,17 +8,33 @@ const TYPES: [TxType, string][] = [
 ];
 
 interface Props {
-  /** Liefert true, wenn gespeichert wurde – dann wird das Formular geleert. */
+  /** Vorhandene Buchung zum Bearbeiten; ohne wird eine neue Buchung erfasst. */
+  initial?: NewTransaction;
+  /** Art, Betrag und Datum sperren, z. B. bei importierten Buchungen. */
+  lockBankData?: boolean;
+  submitLabel?: string;
+  /** Liefert true, wenn gespeichert wurde – bei einer neuen Buchung wird das Formular dann geleert. */
   onSubmit: (tx: NewTransaction) => Promise<boolean>;
+  onCancel?: () => void;
 }
 
-export default function TransactionForm({ onSubmit }: Props) {
-  const [type, setType] = useState<TxType>("out");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(today);
-  const [category, setCategory] = useState(CATEGORIES.out[0]);
-  const [note, setNote] = useState("");
+export default function TransactionForm({
+  initial,
+  lockBankData = false,
+  submitLabel = "Buchung speichern",
+  onSubmit,
+  onCancel,
+}: Props) {
+  const id = useId(); // eindeutige IDs, weil das Formular mehrfach auf der Seite stehen kann
+  const [type, setType] = useState<TxType>(initial?.type ?? "out");
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  const [date, setDate] = useState(initial?.date ?? today);
+  const [category, setCategory] = useState(initial?.category ?? CATEGORIES.out[0]);
+  const [note, setNote] = useState(initial?.note ?? "");
   const amountRef = useRef<HTMLInputElement>(null);
+
+  // Eine Kategorie, die nicht (mehr) in der Liste steht, bleibt auswählbar
+  const categories = CATEGORIES[type].includes(category) ? CATEGORIES[type] : [category, ...CATEGORIES[type]];
 
   const changeType = (t: TxType) => {
     setType(t);
@@ -30,7 +46,7 @@ export default function TransactionForm({ onSubmit }: Props) {
     const amt = parseFloat(amount);
     if (!(amt > 0)) return;
     const ok = await onSubmit({ type, amount: amt, category, date, note: note.trim() });
-    if (ok) {
+    if (ok && !initial) {
       setAmount("");
       setNote("");
       amountRef.current?.focus();
@@ -42,44 +58,70 @@ export default function TransactionForm({ onSubmit }: Props) {
       <div className="full seg" role="radiogroup" aria-label="Art">
         {TYPES.map(([value, label]) => (
           <label key={value}>
-            <input type="radio" name="type" value={value} checked={type === value} onChange={() => changeType(value)} />
+            <input
+              type="radio"
+              name={`${id}-type`}
+              value={value}
+              checked={type === value}
+              disabled={lockBankData}
+              onChange={() => changeType(value)}
+            />
             <span>{label}</span>
           </label>
         ))}
       </div>
       <div>
-        <label htmlFor="amount">Betrag in €</label>
+        <label htmlFor={`${id}-amount`}>Betrag in €</label>
         <input
-          id="amount"
+          id={`${id}-amount`}
           ref={amountRef}
           type="number"
           step="0.01"
           min="0.01"
           required
           inputMode="decimal"
+          disabled={lockBankData}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
       </div>
       <div>
-        <label htmlFor="date">Datum</label>
-        <input id="date" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+        <label htmlFor={`${id}-date`}>Datum</label>
+        <input
+          id={`${id}-date`}
+          type="date"
+          required
+          disabled={lockBankData}
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+        />
       </div>
       <div>
-        <label htmlFor="cat">Kategorie</label>
-        <select id="cat" value={category} onChange={(e) => setCategory(e.target.value)}>
-          {CATEGORIES[type].map((c) => (
+        <label htmlFor={`${id}-cat`}>Kategorie</label>
+        <select id={`${id}-cat`} value={category} onChange={(e) => setCategory(e.target.value)}>
+          {categories.map((c) => (
             <option key={c}>{c}</option>
           ))}
         </select>
       </div>
       <div>
-        <label htmlFor="note">Notiz</label>
-        <input id="note" type="text" maxLength={60} value={note} onChange={(e) => setNote(e.target.value)} />
+        <label htmlFor={`${id}-note`}>Notiz</label>
+        <input id={`${id}-note`} type="text" maxLength={60} value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
-      <button className="add full" type="submit">
-        Buchung speichern
-      </button>
+      {onCancel ? (
+        <div className="full actions">
+          <button className="add" type="submit">
+            {submitLabel}
+          </button>
+          <button className="ghost" type="button" onClick={onCancel}>
+            Abbrechen
+          </button>
+        </div>
+      ) : (
+        <button className="add full" type="submit">
+          {submitLabel}
+        </button>
+      )}
     </form>
   );
 }

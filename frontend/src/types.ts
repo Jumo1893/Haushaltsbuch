@@ -8,6 +8,9 @@ export interface NewTransaction {
   note: string;
 }
 
+/** Geänderte Felder einer Buchung */
+export type TransactionChanges = Partial<NewTransaction>;
+
 export interface Transaction extends NewTransaction {
   id: number;
   counterparty: string;
