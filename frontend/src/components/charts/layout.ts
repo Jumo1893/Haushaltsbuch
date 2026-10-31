@@ -24,6 +24,9 @@ export function monthLabelStep(count: number, width: number) {
   return LABEL_STEPS.find((step) => Math.ceil(count / step) <= fit) ?? 12;
 }
 
+/** Jeder wievielte Tag beschriftet wird, damit nichts überlappt */
+export const dayLabelStep = (count: number, width: number) => Math.ceil(count / Math.max(1, Math.floor(width / 52)));
+
 /** true, wenn der Monat (YYYY-MM) bei diesem Abstand beschriftet wird; der Januar ist immer dabei */
 export const isLabeled = (month: string, step: number) => (Number(month.slice(5, 7)) - 1) % step === 0;
 

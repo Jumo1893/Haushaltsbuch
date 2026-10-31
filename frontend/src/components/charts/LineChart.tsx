@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent, type PointerEvent } from "react";
-import { axisMonth, eurWhole, money, monthFormat, parseMonth } from "../../format";
+import { axisMonth, dateFormat, dayFormat, eurWhole, money, monthFormat, parseDate, parseMonth } from "../../format";
 import ChartTable from "./ChartTable";
-import { axisWidth, isLabeled, lastIndex, monthLabelStep, niceTicks, tipPosition, useWidth } from "./layout";
+import { axisWidth, dayLabelStep, isLabeled, lastIndex, monthLabelStep, niceTicks, tipPosition, useWidth } from "./layout";
 
 export interface LineSeries {
   key: string | number;
@@ -13,7 +13,9 @@ export interface LineSeries {
 interface Props {
   /** Name des Diagramms für Screenreader */
   label: string;
+  /** Monate (YYYY-MM), mit unit "day" Tage (YYYY-MM-DD) */
   months: string[];
+  unit?: "month" | "day";
   series: LineSeries[];
   /** Fläche unter der Linie bis zur Nulllinie, für eine einzelne Reihe */
   area?: boolean;
@@ -28,8 +30,8 @@ const RIGHT = 14;
 
 const format = (v: number | null) => (v === null ? "–" : money(v));
 
-/** Verlauf je Monat als Linien. Ein Fadenkreuz mit Tooltip folgt Maus, Finger und Pfeiltasten. */
-export default function LineChart({ label, months, series, area = false, details = [] }: Props) {
+/** Verlauf je Monat oder Tag als Linien. Ein Fadenkreuz mit Tooltip folgt Maus, Finger und Pfeiltasten. */
+export default function LineChart({ label, months, unit = "month", series, area = false, details = [] }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [active, setActive] = useState<number | null>(null);
   const n = months.length;
@@ -43,7 +45,8 @@ export default function LineChart({ label, months, series, area = false, details
   const plotWidth = Math.max(1, width - left - RIGHT);
   const x = (i: number) => left + (n > 1 ? (i * plotWidth) / (n - 1) : plotWidth / 2);
   const y = (v: number) => TOP + ((hi - v) / (hi - lo)) * PLOT;
-  const labelStep = monthLabelStep(n, plotWidth);
+  const daily = unit === "day";
+  const labelStep = daily ? dayLabelStep(n, plotWidth) : monthLabelStep(n, plotWidth);
 
   const path = (line: (number | null)[]) => {
     let d = "";
@@ -77,7 +80,7 @@ export default function LineChart({ label, months, series, area = false, details
         style={{ height: TOP + PLOT + AXIS }}
         tabIndex={0}
         role="group"
-        aria-label={`${label}. Mit den Pfeiltasten einen Monat wählen.`}
+        aria-label={`${label}. Mit den Pfeiltasten einen ${daily ? "Tag" : "Monat"} wählen.`}
         onKeyDown={handleKey}
         onFocus={() => setActive((i) => i ?? n - 1)}
         onBlur={() => setActive(null)}
@@ -101,9 +104,9 @@ export default function LineChart({ label, months, series, area = false, details
             ))}
             {months.map(
               (m, i) =>
-                isLabeled(m, labelStep) && (
+                (daily ? i % labelStep === 0 : isLabeled(m, labelStep)) && (
                   <text key={m} x={x(i)} y={TOP + PLOT + 19} textAnchor="middle">
-                    {axisMonth(m)}
+                    {daily ? dayFormat.format(parseDate(m)) : axisMonth(m)}
                   </text>
                 ),
             )}
@@ -135,7 +138,7 @@ export default function LineChart({ label, months, series, area = false, details
         )}
         {active !== null && width > 0 && (
           <div className="tip" style={tipPosition(x(active), width)}>
-            <b>{monthFormat.format(parseMonth(months[active]))}</b>
+            <b>{daily ? dateFormat.format(parseDate(months[active])) : monthFormat.format(parseMonth(months[active]))}</b>
             {series.map((s) => (
               <div key={s.key}>
                 <span className="key" style={{ background: s.color }} />
@@ -150,7 +153,7 @@ export default function LineChart({ label, months, series, area = false, details
           </div>
         )}
       </div>
-      <ChartTable months={months} columns={[...series, ...details]} />
+      <ChartTable months={months} unit={unit} columns={[...series, ...details]} />
     </>
   );
 }

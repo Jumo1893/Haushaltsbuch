@@ -1,6 +1,7 @@
 import type {
   Account,
   AccountChanges,
+  DayBalance,
   ImportOptions,
   ImportPreview,
   ImportResult,
@@ -45,6 +46,12 @@ export const fetchLatest = (limit: number, account?: number) =>
 /** Werte je Monat und Konto bis zum Monat until (YYYY-MM) */
 export const fetchMonthStats = (until: string, account?: number) =>
   request<MonthStat[]>(`stats/months?until=${encodeURIComponent(until)}${accountQuery(account)}`);
+
+/** Kontostand je Tag und Konto von from bis until (YYYY-MM-DD) */
+export const fetchDayBalances = (from: string, until: string, account?: number) =>
+  request<DayBalance[]>(
+    `stats/days?from=${encodeURIComponent(from)}&until=${encodeURIComponent(until)}${accountQuery(account)}`,
+  );
 
 export const createTransaction = (tx: NewTransaction) =>
   request<Transaction>("transactions", {
