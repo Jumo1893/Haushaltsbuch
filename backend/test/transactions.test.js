@@ -1,6 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isDate, isMonth, readTransaction, lockedFields, accountParam, readListQuery } = require("../transactions");
+const {
+  isDate,
+  isMonth,
+  readTransaction,
+  lockedFields,
+  readBulkChange,
+  accountParam,
+  readListQuery,
+  readSearchQuery,
+} = require("../transactions");
 
 const valid = () => ({
   type: "out",
@@ -82,6 +91,74 @@ test("importierte Buchungen: Art, Betrag, Datum und Konto sind gesperrt", () => 
   assert.deepEqual(lockedFields({ amount: "1.00", date: "2026-01-01", note: "" }), ["amount", "date"]);
   assert.deepEqual(lockedFields({ type: "in" }), ["type"]);
   assert.deepEqual(lockedFields({ account_id: 2, category: "Wohnen" }), ["account_id"]);
+});
+
+test("Sammeländerung: Kategorie und Notiz für mehrere Buchungen", () => {
+  assert.deepEqual(readBulkChange({ ids: [1, 2], changes: { category: " Lebensmittel ", note: "Einkauf" } }), {
+    ids: [1, 2],
+    changes: { category: "Lebensmittel", note: "Einkauf" },
+  });
+  assert.deepEqual(readBulkChange({ ids: [3], changes: { note: "" } }), { ids: [3], changes: { note: "" } });
+  assert.deepEqual(readBulkChange({ ids: [4, 4, 5], changes: { category: "Wohnen" } }).ids, [4, 5]);
+});
+
+test("Sammeländerung: fehlende oder ungültige Eingaben", () => {
+  const changes = { category: "Wohnen" };
+  const cases = {
+    "nichts angegeben": {},
+    "IDs fehlen": { changes },
+    "keine IDs": { ids: [], changes },
+    "IDs keine Liste": { ids: 1, changes },
+    "ID als Text": { ids: ["1"], changes },
+    "ID 0": { ids: [0], changes },
+    "ID keine ganze Zahl": { ids: [1.5], changes },
+    "Änderungen fehlen": { ids: [1] },
+    "Änderungen leer": { ids: [1], changes: {} },
+    "Änderungen nur mit unbekannten Feldern": { ids: [1], changes: { id: 7 } },
+    "Kategorie leer": { ids: [1], changes: { category: " " } },
+    "Betrag": { ids: [1], changes: { amount: 5 } },
+    "Datum": { ids: [1], changes: { date: "2026-10-27" } },
+    "Art": { ids: [1], changes: { type: "in" } },
+    "Konto": { ids: [1], changes: { accountId: 2 } },
+    "Konto zusammen mit Kategorie": { ids: [1], changes: { accountId: 2, category: "Wohnen" } },
+  };
+  for (const [name, body] of Object.entries(cases)) assert.equal(readBulkChange(body), null, name);
+});
+
+test("Suche: alle Filter sind optional", () => {
+  assert.deepEqual(readSearchQuery({}), { patterns: [], category: null, type: null, account: null });
+  assert.deepEqual(readSearchQuery({ q: "", category: "", type: "", account: "" }), {
+    patterns: [],
+    category: null,
+    type: null,
+    account: null,
+  });
+  assert.deepEqual(readSearchQuery({ q: "penny", category: "Sonstiges", type: "out", account: "3" }), {
+    patterns: ["%penny%"],
+    category: "Sonstiges",
+    type: "out",
+    account: 3,
+  });
+});
+
+test("Suche: jedes Wort ist ein Muster, Platzhalter zählen als normale Zeichen", () => {
+  assert.deepEqual(readSearchQuery({ q: "  penny   markt " }).patterns, ["%penny%", "%markt%"]);
+  assert.deepEqual(readSearchQuery({ q: "100%" }).patterns, ["%100\\%%"]);
+  assert.deepEqual(readSearchQuery({ q: "a_b" }).patterns, ["%a\\_b%"]);
+  assert.deepEqual(readSearchQuery({ q: "c\\d" }).patterns, ["%c\\\\d%"]);
+  assert.deepEqual(readSearchQuery({ q: "   " }).patterns, []);
+});
+
+test("Suche: ungültige Parameter", () => {
+  const cases = {
+    "Text doppelt": { q: ["a", "b"] },
+    "Kategorie doppelt": { category: ["a", "b"] },
+    "unbekannte Art": { type: "transfer" },
+    "Art doppelt": { type: ["in", "out"] },
+    "Konto kein Zahl": { account: "abc" },
+    "Konto 0": { account: "0" },
+  };
+  for (const [name, query] of Object.entries(cases)) assert.ok(readSearchQuery(query).error, name);
 });
 
 test("Liste: Buchungen eines Monats oder die neuesten, optional eines Kontos", () => {

@@ -1,6 +1,7 @@
 import type {
   Account,
   AccountChanges,
+  BulkChanges,
   DayBalance,
   ImportOptions,
   ImportPreview,
@@ -12,6 +13,7 @@ import type {
   ProfileMismatch,
   Transaction,
   TransactionChanges,
+  TransactionFilters,
 } from "./types";
 
 /** Fehlerantwort der API; `body` enthält die Meldung des Servers, falls vorhanden. */
@@ -43,6 +45,12 @@ export const fetchTransactions = (month: string, account?: number) =>
 export const fetchLatest = (limit: number, account?: number) =>
   request<Transaction[]>(`transactions?limit=${limit}${accountQuery(account)}`);
 
+/** Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst */
+export const searchTransactions = ({ text, account, category, type }: TransactionFilters) =>
+  request<Transaction[]>(
+    `transactions/search?${new URLSearchParams({ q: text, category, type })}${accountQuery(account ?? undefined)}`,
+  );
+
 /** Werte je Monat und Konto bis zum Monat until (YYYY-MM) */
 export const fetchMonthStats = (until: string, account?: number) =>
   request<MonthStat[]>(`stats/months?until=${encodeURIComponent(until)}${accountQuery(account)}`);
@@ -65,6 +73,14 @@ export const updateTransaction = (id: number, changes: TransactionChanges) =>
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(changes),
+  });
+
+/** Ändert mehrere Buchungen in einem Schritt; `updated` ist die Zahl der geänderten Buchungen */
+export const updateTransactions = (ids: number[], changes: BulkChanges) =>
+  request<{ updated: number }>("transactions", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, changes }),
   });
 
 export const deleteTransaction = (id: number) => request<null>(`transactions/${id}`, { method: "DELETE" });

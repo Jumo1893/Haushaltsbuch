@@ -12,7 +12,7 @@ export default function CategoryBreakdown({ items }: { items: Transaction[] }) {
   }
   const names = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
 
-  if (!names.length) return <p className="empty">Keine Ausgaben in diesem Monat.</p>;
+  if (!names.length) return <p className="empty">Keine Ausgaben.</p>;
 
   return (
     <div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
 import { ym } from "./format";
+import type { TransactionFilters } from "./types";
 
 // Kleiner Router über die History-API: Seite und Monat stehen in der Adresse, ein Link lädt die App
 // nicht neu. nginx (try_files) und der Vite-Dev-Server liefern für jeden Pfad index.html aus.
@@ -62,4 +63,31 @@ export function useMonthParam(): [string, (month: string) => void] {
   const param = query.get("monat");
   const month = param && /^\d{4}-(0[1-9]|1[0-2])$/.test(param) ? param : ym(new Date());
   return [month, (m: string) => navigate(`${path}?monat=${m}`, { replace: true })];
+}
+
+/** Filter aus ?suche=, ?konto=, ?kategorie= und ?art=. Ändern ersetzt den Eintrag im Verlauf, der Monat bleibt. */
+export function useFilterParams(): [TransactionFilters, (filters: TransactionFilters) => void] {
+  const { path, query } = useLocation();
+  const filters = useMemo<TransactionFilters>(() => {
+    const type = query.get("art");
+    return {
+      text: query.get("suche") ?? "",
+      account: Number(/^\d+$/.exec(query.get("konto") ?? "")?.[0]) || null,
+      category: query.get("kategorie") ?? "",
+      type: type === "in" || type === "out" ? type : "",
+    };
+  }, [query]);
+
+  const setFilters = ({ text, account, category, type }: TransactionFilters) => {
+    const next = new URLSearchParams(query);
+    const params = { suche: text, konto: account ? String(account) : "", kategorie: category, art: type };
+    for (const [name, value] of Object.entries(params)) {
+      if (value) next.set(name, value);
+      else next.delete(name);
+    }
+    const search = next.toString();
+    navigate(search ? `${path}?${search}` : path, { replace: true });
+  };
+
+  return [filters, setFilters];
 }

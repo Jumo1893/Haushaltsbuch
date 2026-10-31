@@ -18,6 +18,8 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
 - Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Konto, Kategorie und Notiz von jeder Seite aus erfassen,
   bearbeiten und löschen. Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen lassen sich
   Kategorie und Notiz ändern; Art, Betrag, Datum und Konto stehen durch den Import fest und bleiben, wie sie sind.
+- Buchungen über alle Monate und Konten suchen und mehrere auf einmal bearbeiten, z. B. alle Einkäufe bei Penny auf
+  die Kategorie „Lebensmittel“ setzen (siehe „Oberfläche“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
 - Kontostand mit der Bank abgleichen; Umbuchungen zwischen eigenen Konten zählen nicht als Einnahme oder Ausgabe
 - Monatsansicht mit Blättern zwischen den Monaten, Saldo sowie Summe der Einnahmen und Ausgaben im Monat
@@ -129,6 +131,20 @@ Verlauf des Kontos und darunter seine Buchungen je Monat. Hier lässt sich das K
 Bank abgleichen, ein Import für das Konto starten und ein Konto ohne Buchungen löschen.
 
 **Buchungen** (`/buchungen`): alle Buchungen eines Monats über alle Konten, mit Saldo und Ausgaben nach Kategorie.
+Darüber stehen Suche und Filter. Sobald ein Suchtext, ein Konto, eine Kategorie oder eine Art gewählt ist, zeigt die
+Seite statt des Monats alle passenden Buchungen aus allen Monaten, mit Saldo und Ausgaben nach Kategorie der Treffer.
+Gesucht wird in Gegenpartei, Verwendungszweck und Notiz, Groß- und Kleinschreibung zählen nicht, und bei mehreren
+Wörtern müssen alle vorkommen. Die Filter stehen in der Adresse (z. B. `/buchungen?suche=penny&art=out`).
+
+**Mehrere Buchungen bearbeiten:** In den Listen der Seiten „Buchungen“ und „Konto“ lassen sich Buchungen über die
+Kästchen auswählen, mit „Alle auswählen“ alle gezeigten.
+- Die Auswahl bleibt beim Blättern und Suchen bestehen und lässt sich so über Monate und Konten zusammenstellen. Die
+  Leiste unten nennt, wie viele ausgewählte Buchungen gerade nicht zu sehen sind, der Dialog listet alle auf.
+- „Bearbeiten“ ändert Kategorie und Notiz aller ausgewählten Buchungen, auch importierter. Was auf „Nicht ändern“ steht,
+  bleibt, wie es ist. Enthält die Auswahl Ausgaben und Einnahmen, lässt sich für beide je eine Kategorie wählen, weil
+  sie verschiedene Kategorien haben.
+- Eine neue Notiz ersetzt vorhandene Notizen, „Vorhandene Notizen entfernen“ leert sie.
+- Die Änderung lässt sich nicht rückgängig machen.
 
 **Import** (`/import`): der CSV-Import (siehe „CSV-Import“) und die letzten 50 Importe mit Datum, Datei, Anzahlen und
 den Konten, in die sie Umsätze übernommen haben.
@@ -308,8 +324,8 @@ Nach Änderungen am Backend (`backend/`) das Backend neu bauen:
 Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neuer IP-Adresse.
 
 ## Tests
-Die Unit-Tests für die Prüfung von Buchungen und Konten (inklusive IBAN-Prüfziffer und Kontostand laut Bank), die
-Parameter der Buchungsliste und den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
+Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
+Bank), die Parameter von Buchungsliste und Suche und den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
 Duplikaterkennung, Zuordnung zu Konten) laufen mit dem Test-Runner von Node.js 20+ und brauchen keine Datenbank:
 ```
 cd backend
@@ -322,7 +338,7 @@ Die Testdateien enthalten nur erfundene Daten.
 ├── docker-compose.yml        Alle Dienste (db, backend, frontend)
 ├── backend/
 │   ├── server.js             Express-API und Tabellen-Setup
-│   ├── transactions.js       Prüfung der Eingaben beim Anlegen und Ändern von Buchungen
+│   ├── transactions.js       Prüfung der Eingaben beim Anlegen, Ändern und Suchen von Buchungen
 │   ├── accounts.js           Konten: Prüfung der Eingaben, IBAN, Zuordnung beim Import
 │   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
@@ -337,7 +353,7 @@ Die Testdateien enthalten nur erfundene Daten.
     └── src/
         ├── main.tsx          Einstieg, rendert <App />
         ├── App.tsx           Kopfleiste, Navigation, Auswahl der Seite, „Neue Buchung“
-        ├── router.tsx        Seitenwechsel über die Adresse (History-API), Monat in ?monat=
+        ├── router.tsx        Seitenwechsel über die Adresse (History-API), Monat und Filter als Parameter
         ├── data.tsx          Konten für alle Seiten, Neuladen nach Änderungen (useLoad)
         ├── api.ts            Typisierte Aufrufe der REST-API
         ├── stats.ts          Summen je Monat, Saldo, größte Ausgaben
@@ -345,11 +361,11 @@ Die Testdateien enthalten nur erfundene Daten.
         ├── format.ts         Währungs- und Datumsformatierung
         ├── index.css         Styles inkl. Dark Mode und Diagrammfarben
         ├── pages/            DashboardPage, AccountPage, BookingsPage, ImportPage
-        └── components/       MonthNav, MonthBookings, MonthKpis, BalanceCard,
-            │                 CategoryBreakdown, TopPayees, TransactionList,
-            │                 TransactionForm, NewTransactionDialog,
-            │                 EditTransactionDialog, AccountCard, AccountDialog,
-            │                 AccountSelect, ReconcileDialog, Segmented,
+        └── components/       MonthNav, BookingsView, BookingFilters, MonthKpis,
+            │                 BalanceCard, CategoryBreakdown, TopPayees,
+            │                 TransactionList, TransactionForm, NewTransactionDialog,
+            │                 EditTransactionDialog, BulkEditDialog, AccountCard,
+            │                 AccountDialog, AccountSelect, ReconcileDialog, Segmented,
             │                 CsvImport, ImportPreview, ImportHistory
             └── charts/       LineChart, CashflowChart, Sparkline, ChartTable
                               (eigenes SVG, ohne Diagramm-Bibliothek)
@@ -437,7 +453,9 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/health`                        | Statusprüfung, liefert `{ "ok": true }` |
 | `GET`    | `/api/transactions?month=YYYY-MM`    | Buchungen eines Monats, neueste zuerst. Mit `&account=ID` nur die eines Kontos |
 | `GET`    | `/api/transactions?limit=N`          | Die neuesten N Buchungen (1 bis 100), auch mit `&account=ID` |
+| `GET`    | `/api/transactions/search?q=TEXT&category=NAME&type=out&account=ID` | Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst. Alle Parameter sind optional. `q` sucht in Gegenpartei, Verwendungszweck und Notiz, bei mehreren Wörtern müssen alle vorkommen |
 | `POST`   | `/api/transactions`                  | Buchung anlegen, liefert sie mit `201` zurück |
+| `PATCH`  | `/api/transactions`                  | Kategorie und Notiz mehrerer Buchungen in einem Schritt ändern, liefert `{ "updated": 3 }` |
 | `PATCH`  | `/api/transactions/:id`              | Buchung ändern, nur die übergebenen Felder; liefert die geänderte Buchung |
 | `DELETE` | `/api/transactions/:id`              | Buchung löschen, `204` |
 | `GET`    | `/api/stats/months?until=YYYY-MM`    | Werte je Konto und Monat, lückenlos vom ersten Monat mit Buchungen bis `until` (bzw. bis zur letzten Buchung). Mit `&account=ID` nur für ein Konto |
@@ -462,6 +480,11 @@ sowie `transfer`: `true` bei einer Umbuchung zwischen eigenen Konten (siehe „U
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
 `{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category` und
 `note` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
+
+Body für `PATCH /api/transactions`: die IDs und die Änderung, z. B.
+`{ "ids": [12, 57, 103], "changes": { "category": "Lebensmittel", "note": "Einkauf beim Supermarkt" } }`. In `changes`
+sind nur `category` und `note` erlaubt, sonst antwortet das Backend mit `400`. IDs, die es nicht (mehr) gibt, werden
+übergangen, `updated` nennt die Zahl der geänderten Buchungen.
 
 Body für `POST /api/accounts` (`institution` und `iban` sind optional):
 ```json

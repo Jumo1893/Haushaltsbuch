@@ -3,7 +3,16 @@ const express = require("express");
 const { Pool } = require("pg");
 const { loadProfiles } = require("./import/profiles");
 const { createImportRouter } = require("./import/routes");
-const { readTransaction, lockedFields, isDate, isMonth, accountParam, readListQuery } = require("./transactions");
+const {
+  readTransaction,
+  lockedFields,
+  readBulkChange,
+  isDate,
+  isMonth,
+  accountParam,
+  readListQuery,
+  readSearchQuery,
+} = require("./transactions");
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
 const { TRANSFER, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
 
@@ -162,6 +171,20 @@ app.get("/api/transactions", async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
+// Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst
+app.get("/api/transactions/search", async (req, res) => {
+  const { patterns, category, type, account, error } = readSearchQuery(req.query);
+  if (error) return res.status(400).json({ error });
+  try {
+    const { rows } = await pool.query(
+      `${SELECT} WHERE concat_ws(' ', t.counterparty, t.purpose, t.note) ILIKE ALL ($1::text[])
+         AND ($2::text IS NULL OR t.category = $2) AND ($3::text IS NULL OR t.type = $3)
+         AND ($4::int IS NULL OR t.account_id = $4)
+       ORDER BY t.date DESC, t.id DESC`, [patterns, category, type, account]);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
 app.post("/api/transactions", async (req, res) => {
   const tx = readTransaction(req.body || {});
   if (!tx) return res.status(400).json({ error: "Ungültige Eingabe" });
@@ -176,6 +199,20 @@ app.post("/api/transactions", async (req, res) => {
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(400).json({ error: "Das gewählte Konto gibt es nicht." });
     console.error(e); res.status(500).json({ error: "Serverfehler" });
   }
+});
+
+// Ändert Kategorie und Notiz mehrerer Buchungen in einem Schritt und meldet, wie viele es waren
+app.patch("/api/transactions", async (req, res) => {
+  const bulk = readBulkChange(req.body || {});
+  if (!bulk) return res.status(400).json({ error: "Ungültige Eingabe" });
+  // Spaltennamen stammen aus readBulkChange, nicht aus der Anfrage
+  const fields = Object.keys(bulk.changes);
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = ANY($1)`,
+      [bulk.ids, ...fields.map((f) => bulk.changes[f])]);
+    res.json({ updated: rowCount });
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
 // Ändert nur die übergebenen Felder. Bei importierten Buchungen bleiben Art, Betrag, Datum und Konto wie beim Import.

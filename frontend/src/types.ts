@@ -12,6 +12,22 @@ export interface NewTransaction {
 /** Geänderte Felder einer Buchung */
 export type TransactionChanges = Partial<NewTransaction>;
 
+/** Änderung mehrerer Buchungen auf einmal: die Felder, die sich auch bei importierten Buchungen ändern lassen */
+export type BulkChanges = Pick<TransactionChanges, "category" | "note">;
+
+/** Filter der Suche über alle Monate; leere Werte filtern nicht */
+export interface TransactionFilters {
+  text: string; // Wörter in Gegenpartei, Verwendungszweck oder Notiz
+  account: number | null;
+  category: string;
+  type: TxType | "";
+}
+
+export const NO_FILTERS: TransactionFilters = { text: "", account: null, category: "", type: "" };
+
+export const isFiltered = ({ text, account, category, type }: TransactionFilters) =>
+  !!(text.trim() || account || category || type);
+
 export interface Transaction extends NewTransaction {
   id: number;
   counterparty: string;
@@ -137,6 +153,9 @@ export const CATEGORIES: Record<TxType, string[]> = {
   out: ["Wohnen", "Lebensmittel", "Mobilität", "Freizeit", "Versicherung", "Gesundheit", "Sonstiges", TRANSFER_CATEGORY],
   in: ["Gehalt", "Nebenverdienst", "Erstattung", "Sonstiges", TRANSFER_CATEGORY],
 };
+
+/** Kategorien von Ausgaben und Einnahmen zusammen, jede einmal */
+export const ALL_CATEGORIES = [...new Set([...CATEGORIES.out, ...CATEGORIES.in])];
 
 export const ACCOUNT_KINDS: [AccountKind, string][] = [
   ["giro", "Girokonto"],

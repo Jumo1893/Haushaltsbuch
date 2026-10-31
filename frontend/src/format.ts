@@ -42,6 +42,9 @@ export const axisMonth = (month: string) => {
 /** IBAN in Vierergruppen, z. B. "DE89 3704 0044 0532 0130 00" */
 export const formatIban = (iban: string) => iban.replace(/(.{4})(?=.)/g, "$1 ");
 
+/** z. B. "1 Buchung", "5 Buchungen" */
+export const bookings = (n: number) => `${n} ${n === 1 ? "Buchung" : "Buchungen"}`;
+
 /** Dateigröße in MB, z. B. "5 MB" */
 export const megabytes = (bytes: number) =>
   `${(bytes / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB`;

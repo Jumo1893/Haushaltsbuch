@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ApiError, deleteAccount, fetchDayBalances, fetchMonthStats, updateAccount } from "../api";
 import AccountDialog from "../components/AccountDialog";
+import BookingsView from "../components/BookingsView";
 import CashflowChart from "../components/charts/CashflowChart";
 import LineChart from "../components/charts/LineChart";
-import MonthBookings from "../components/MonthBookings";
 import MonthKpis from "../components/MonthKpis";
 import MonthNav from "../components/MonthNav";
 import ReconcileDialog from "../components/ReconcileDialog";
@@ -168,7 +168,7 @@ export default function AccountPage({ id }: { id: number }) {
         <h2>Buchungen</h2>
         <MonthNav month={parseMonth(month)} onChange={(n) => setMonth(ym(addMonths(parseMonth(month), n)))} />
       </div>
-      <MonthBookings month={month} onMonthChange={setMonth} accountId={id} nested />
+      <BookingsView month={month} onMonthChange={setMonth} accountId={id} nested />
 
       {dialog === "edit" && <AccountDialog account={account} onSave={save} onClose={() => setDialog(null)} />}
       {dialog === "reconcile" && (

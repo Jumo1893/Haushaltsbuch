@@ -51,6 +51,19 @@ function readTransaction(body, partial = false) {
 /** Felder einer Änderung, die bei einer importierten Buchung nicht erlaubt sind */
 const lockedFields = (changes) => BANK_FIELDS.filter((field) => field in changes);
 
+/**
+ * Prüft eine Änderung mehrerer Buchungen, { ids, changes }. Erlaubt sind nur Kategorie und Notiz, weil alles
+ * andere bei importierten Buchungen feststeht. Liefert die IDs ohne Doppelte und die Felder für die Datenbank,
+ * sonst null.
+ */
+function readBulkChange(body) {
+  const { ids } = body;
+  if (!Array.isArray(ids) || !ids.length || !ids.every((id) => Number.isInteger(id) && id > 0)) return null;
+  const changes = readTransaction(body.changes ?? {}, true);
+  if (!changes || !Object.keys(changes).length || lockedFields(changes).length) return null;
+  return { ids: [...new Set(ids)], changes };
+}
+
 /** true, wenn der Text ein Monat im Format YYYY-MM ist */
 const isMonth = (value) => typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 
@@ -83,4 +96,32 @@ function readListQuery(query) {
   return { limit, account };
 }
 
-module.exports = { BANK_FIELDS, MAX_CENTS, isDate, isMonth, readTransaction, lockedFields, accountParam, readListQuery };
+/** Suchtext als Muster für ILIKE, eins je Wort; %, _ und \ zählen als normale Zeichen */
+const searchPatterns = (text) =>
+  text.trim().split(/\s+/).filter(Boolean).map((word) => `%${word.replace(/[\\%_]/g, "\\$&")}%`);
+
+/**
+ * Prüft die Parameter der Suche über alle Monate, alle sind optional: q (Wörter, die vorkommen müssen),
+ * category, type und account. Liefert { patterns, category, type, account } oder { error }.
+ */
+function readSearchQuery(query) {
+  const account = accountParam(query.account);
+  if (Number.isNaN(account)) return { error: "Ungültiges Konto" };
+  const { q = "", category = "", type = "" } = query;
+  if (typeof q !== "string" || typeof category !== "string") return { error: "Ungültige Suche" };
+  if (!["", "in", "out"].includes(type)) return { error: "Ungültige Art" };
+  return { patterns: searchPatterns(q), category: category || null, type: type || null, account };
+}
+
+module.exports = {
+  BANK_FIELDS,
+  MAX_CENTS,
+  isDate,
+  isMonth,
+  readTransaction,
+  lockedFields,
+  readBulkChange,
+  accountParam,
+  readListQuery,
+  readSearchQuery,
+};

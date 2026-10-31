@@ -105,6 +105,16 @@ li small{color:var(--muted);display:block}
 .in{color:var(--in)}.out{color:var(--out)}.transfer{color:var(--muted)}
 .del{background:none;border:0;color:var(--muted);padding:4px 8px;border-radius:6px}
 .empty{color:var(--muted);margin:0}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px}
+.filters input{flex:1 1 240px;width:auto;background:var(--surface)}
+.filters select{flex:0 1 150px;width:auto;background:var(--surface)}
+.selectable>li{grid-template-columns:auto minmax(0,1fr) auto}
+.pick{display:flex;margin:-10px -4px -10px -6px;padding:10px 4px 10px 6px;cursor:pointer}
+.pick input{width:18px;height:18px;margin:0;padding:0}
+.check.pick-all{margin:0 0 6px;font-size:.9rem;color:var(--muted)}
+.selection{position:sticky;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 16px;padding:10px 14px;background:var(--surface);border:1px solid var(--muted);border-radius:10px;box-shadow:0 4px 14px rgb(0 0 0/.12)}
+.selection>span{margin-right:auto}
+.selection .add,.selection .ghost{padding:8px 14px}
 .errbox{background:var(--surface);border:1px solid var(--out);color:var(--out);border-radius:10px;padding:12px 16px;margin:16px 0}
 button:disabled{opacity:.6;cursor:default}
 .hint{display:block;color:var(--muted);font-size:.85rem;margin:6px 0 0}
@@ -185,10 +195,12 @@ dialog.edit::backdrop{background:rgb(0 0 0/.45)}
 dialog.edit .hint{margin:0 0 12px}
 dialog.edit form .hint{margin:6px 0 0}
 dialog.edit .errbox{margin:0 0 12px}
+dialog.edit .table-scroll{max-height:220px;padding-right:6px}
 .source{margin:0 0 8px;font-size:.95rem}
 .source div{margin-bottom:6px}
 .source dt{font-size:.8rem;color:var(--muted)}
 .source dd{margin:0;overflow-wrap:anywhere}
 @media (max-width:600px){.top nav{order:3;width:100%}.top nav a{flex:1;text-align:center}}
-@media (max-width:480px){.bar{grid-template-columns:90px 1fr auto}}
+@media (max-width:480px){.bar{grid-template-columns:90px 1fr auto}
+.selectable>li{grid-template-columns:auto minmax(0,1fr)}.selectable .del{grid-column:2;justify-self:end;margin-top:-8px}.selection>span{flex-basis:100%}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
