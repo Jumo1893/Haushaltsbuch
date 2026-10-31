@@ -50,7 +50,14 @@ export interface MonthStat {
   income: number; // ohne Umbuchungen
   expenses: number; // ohne Umbuchungen, positiv
   transfers: number; // Umbuchungen mit Vorzeichen
-  balance: number; // Kontostand am Monatsende
+  balance: number; // Kontostand am Monatsanfang
+}
+
+/** Kontostand eines Kontos an einem Tag */
+export interface DayBalance {
+  date: string; // YYYY-MM-DD
+  accountId: number;
+  balance: number; // Kontostand am Tagesende
 }
 
 /** Ein bisheriger Import */

@@ -80,8 +80,9 @@ input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-rad
 .seg input:checked+span{font-weight:600}
 .seg label:has(input:checked){background:var(--accent);color:var(--on-accent)}
 .seg label:has(input:focus-visible){outline:2px solid var(--ink);outline-offset:-4px}
-.seg.small{display:inline-flex;background:var(--surface)}
+.seg.small{display:inline-flex;background:var(--surface);max-width:100%;overflow-x:auto}
 .seg.small label{flex:none;padding:4px 12px;font-size:.9rem}
+@media (max-width:480px){.seg.small label{padding:4px 6px}}
 .add{background:var(--accent);color:var(--on-accent);border:0;border-radius:8px;padding:11px;font-weight:600}
 .bar{display:grid;grid-template-columns:110px 1fr auto;gap:10px;align-items:center;margin:8px 0;font-size:.95rem}
 .bar>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

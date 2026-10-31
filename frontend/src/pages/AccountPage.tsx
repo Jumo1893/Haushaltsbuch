@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError, deleteAccount, fetchMonthStats, updateAccount } from "../api";
+import { ApiError, deleteAccount, fetchDayBalances, fetchMonthStats, updateAccount } from "../api";
 import AccountDialog from "../components/AccountDialog";
 import CashflowChart from "../components/charts/CashflowChart";
 import LineChart from "../components/charts/LineChart";
@@ -9,9 +9,9 @@ import MonthNav from "../components/MonthNav";
 import ReconcileDialog from "../components/ReconcileDialog";
 import Segmented from "../components/Segmented";
 import { OFFLINE, useData, useLoad } from "../data";
-import { addMonths, dateFormat, formatIban, money, parseDate, parseMonth, ym } from "../format";
+import { addMonths, dateFormat, formatIban, money, monthsBefore, parseDate, parseMonth, today, ym } from "../format";
 import { Link, navigate, useMonthParam, useTitle } from "../router";
-import { RANGES, totalsByMonth } from "../stats";
+import { DAILY_MONTHS, balanceCourse, rangesFor, totalsByMonth } from "../stats";
 import { kindLabel, type AccountChanges } from "../types";
 
 /** Seite eines Kontos: Kontostand, Verlauf, Buchungen je Monat und Einstellungen des Kontos */
@@ -19,7 +19,9 @@ export default function AccountPage({ id }: { id: number }) {
   const { accounts, loaded, colorOf, refresh } = useData();
   const account = accounts.find((a) => a.id === id);
   const current = ym(new Date());
+  const day = today();
   const stats = useLoad(() => fetchMonthStats(current, id), [id, current]);
+  const days = useLoad(() => fetchDayBalances(monthsBefore(day, DAILY_MONTHS), day, id), [id, day]);
   const [month, setMonth] = useMonthParam();
   const [dialog, setDialog] = useState<"edit" | "reconcile" | null>(null);
   const [range, setRange] = useState(12);
@@ -42,6 +44,7 @@ export default function AccountPage({ id }: { id: number }) {
 
   const totals = totalsByMonth(stats.data ?? []);
   const shown = range ? totals.slice(-range) : totals;
+  const course = balanceCourse(range, stats.data ?? [], days.data ?? [], day);
 
   // Fehler beim Speichern zeigen die Dialoge selbst an
   const save = async (changes: AccountChanges) => {
@@ -95,7 +98,7 @@ export default function AccountPage({ id }: { id: number }) {
           )}
         </div>
       </div>
-      {(error || stats.failed) && (
+      {(error || stats.failed || days.failed) && (
         <p className="errbox" role="alert">
           {error || OFFLINE}
         </p>
@@ -136,15 +139,16 @@ export default function AccountPage({ id }: { id: number }) {
         <>
           <div className="section-head">
             <h2>Verlauf</h2>
-            {totals.length > 12 && <Segmented label="Zeitraum" options={RANGES} value={range} onChange={setRange} />}
+            <Segmented label="Zeitraum" options={rangesFor(totals.length)} value={range} onChange={setRange} />
           </div>
-          <div className={stats.loading ? "stale" : undefined}>
+          <div className={stats.loading || days.loading ? "stale" : undefined}>
             <section>
-              <h3 className="h2">Kontostand</h3>
+              <h3 className="h2">Kontostand {course.when}</h3>
               <LineChart
-                label={`Kontostand ${account.name} am Monatsende`}
-                months={shown.map((t) => t.month)}
-                series={[{ key: id, name: account.name, color: "var(--ink)", values: shown.map((t) => t.balance) }]}
+                label={`Kontostand ${account.name} ${course.when}`}
+                months={course.points}
+                unit={course.unit}
+                series={[{ key: id, name: account.name, color: "var(--ink)", values: course.total }]}
                 area
               />
             </section>

@@ -57,6 +57,13 @@ export const today = () => {
   return `${ym(t)}-${pad(t.getDate())}`;
 };
 
+/** Datum (YYYY-MM-DD) n Monate früher; gibt es den Tag dort nicht, der letzte Tag des Monats */
+export const monthsBefore = (date: string, n: number) => {
+  const d = parseDate(date);
+  const last = new Date(d.getFullYear(), d.getMonth() - n + 1, 0);
+  return `${ym(last)}-${pad(Math.min(d.getDate(), last.getDate()))}`;
+};
+
 export const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, 1);
 
 /** Ganze Tage von Datum a bis Datum b (YYYY-MM-DD) */

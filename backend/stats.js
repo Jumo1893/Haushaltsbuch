@@ -49,8 +49,9 @@ const ACCOUNTS = `SELECT a.id, a.name, a.kind, a.institution, a.iban,
 
 /**
  * Einnahmen, Ausgaben (beide ohne Umbuchungen) und Umbuchungen (mit Vorzeichen) je Konto und Monat
- * sowie der Kontostand am Monatsende. Lückenlos vom ersten Monat mit Buchungen bis zum Monat `until`
- * (YYYY-MM) bzw. bis zum letzten Monat mit Buchungen, falls der später liegt.
+ * sowie der Kontostand am Monatsanfang, also vor allen Buchungen des Monats. Lückenlos vom ersten
+ * Monat mit Buchungen bis zum Monat `until` (YYYY-MM) bzw. bis zum letzten Monat mit Buchungen,
+ * falls der später liegt.
  * Mit `accountId` nur für dieses Konto; ohne für alle Konten, auch solche ohne Buchungen.
  */
 async function monthlyStats(db, until, accountId = null) {
@@ -75,7 +76,8 @@ async function monthlyStats(db, until, accountId = null) {
      SELECT to_char(m.month, 'YYYY-MM') AS month, o.id AS "accountId",
        COALESCE(f.income, 0)::float8 AS income, COALESCE(f.expenses, 0)::float8 AS expenses,
        COALESCE(f.transfers, 0)::float8 AS transfers,
-       (o.amount + sum(COALESCE(f.net, 0)) OVER (PARTITION BY o.id ORDER BY m.month))::float8 AS balance
+       (o.amount + COALESCE(sum(COALESCE(f.net, 0)) OVER (PARTITION BY o.id ORDER BY m.month
+         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0))::float8 AS balance
      FROM months m CROSS JOIN opening o
      LEFT JOIN flows f ON f.account_id = o.id AND f.month = m.month
      ORDER BY m.month, o.id`,
@@ -84,4 +86,34 @@ async function monthlyStats(db, until, accountId = null) {
   return rows;
 }
 
-module.exports = { TRANSFER_CATEGORY, SIGNED, TRANSFER, OPENING, ACCOUNTS, monthlyStats };
+/**
+ * Kontostand je Konto am Ende jedes Tages (nach allen Buchungen des Tages), lückenlos von `from` bis
+ * `until` (YYYY-MM-DD), aber frühestens ab der ersten Buchung.
+ * Mit `accountId` nur für dieses Konto; ohne für alle Konten, auch solche ohne Buchungen.
+ */
+async function dailyBalances(db, from, until, accountId = null) {
+  const { rows } = await db.query(
+    `WITH flows AS (
+       SELECT t.account_id, t.date, sum(${SIGNED}) AS net
+       FROM transactions t WHERE t.date <= $2 AND ($3::int IS NULL OR t.account_id = $3)
+       GROUP BY t.account_id, t.date
+     ), days AS (
+       SELECT g.day::date AS day
+       FROM generate_series(greatest($1::date, (SELECT min(date) FROM flows))::timestamp, $2::date::timestamp,
+         interval '1 day') AS g(day)
+     ), opening AS MATERIALIZED (
+       SELECT a.id, ${OPENING} + COALESCE((SELECT sum(f.net) FROM flows f
+         WHERE f.account_id = a.id AND f.date < $1), 0) AS amount
+       FROM accounts a WHERE $3::int IS NULL OR a.id = $3
+     )
+     SELECT to_char(d.day, 'YYYY-MM-DD') AS date, o.id AS "accountId",
+       (o.amount + sum(COALESCE(f.net, 0)) OVER (PARTITION BY o.id ORDER BY d.day))::float8 AS balance
+     FROM days d CROSS JOIN opening o
+     LEFT JOIN flows f ON f.account_id = o.id AND f.date = d.day
+     ORDER BY d.day, o.id`,
+    [from, until, accountId],
+  );
+  return rows;
+}
+
+module.exports = { TRANSFER_CATEGORY, SIGNED, TRANSFER, OPENING, ACCOUNTS, monthlyStats, dailyBalances };

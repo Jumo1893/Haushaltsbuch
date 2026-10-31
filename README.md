@@ -119,7 +119,8 @@ eigene Adresse und lässt sich als Lesezeichen speichern, der gewählte Monat st
 - Je Konto eine Karte mit Kontostand, Verlauf der letzten zwölf Monate und dem Tag der letzten Buchung. Liegt sie mehr
   als 30 Tage zurück, nennt die Karte stattdessen ihr Alter, ein Hinweis, dass ein Import fällig sein könnte. Ein Klick
   öffnet die Seite des Kontos.
-- Verlauf für 12 Monate, 2 Jahre oder alles: der Kontostand am Monatsende, für alle Konten zusammen oder je Konto, und
+- Verlauf für 1 Monat, 3 Monate, 12 Monate, 2 Jahre oder alles: der Kontostand, für alle Konten zusammen oder je Konto,
+  bei 1 und 3 Monaten für jeden Tag (am Tagesende), sonst am Monatsanfang, und
   Einnahmen und Ausgaben je Monat mit Saldo und Sparquote. Ein Klick auf einen Monat zeigt seine Buchungen.
 - Die größten Ausgaben des laufenden Monats nach Empfänger und die letzten Buchungen
 
@@ -440,6 +441,7 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `PATCH`  | `/api/transactions/:id`              | Buchung ändern, nur die übergebenen Felder; liefert die geänderte Buchung |
 | `DELETE` | `/api/transactions/:id`              | Buchung löschen, `204` |
 | `GET`    | `/api/stats/months?until=YYYY-MM`    | Werte je Konto und Monat, lückenlos vom ersten Monat mit Buchungen bis `until` (bzw. bis zur letzten Buchung). Mit `&account=ID` nur für ein Konto |
+| `GET`    | `/api/stats/days?from=YYYY-MM-DD&until=YYYY-MM-DD` | Kontostand je Konto und Tag, lückenlos von `from` (frühestens ab der ersten Buchung) bis `until`. Mit `&account=ID` nur für ein Konto |
 | `GET`    | `/api/accounts`                      | Konten mit Kontostand, nach Name sortiert |
 | `POST`   | `/api/accounts`                      | Konto anlegen, liefert es mit `201` zurück |
 | `PATCH`  | `/api/accounts/:id`                  | Konto ändern, nur die übergebenen Felder; liefert das geänderte Konto |
@@ -479,8 +481,11 @@ allen Buchungen), `pendingRoundUps` (bei Trade Republic für Round-Ups vorgemerk
 
 `GET /api/stats/months` liefert je Konto und Monat z. B.
 `{ "month": "2026-10", "accountId": 1, "income": 2850, "expenses": 1935.59, "transfers": -300, "balance": 3456.78 }`:
-Einnahmen und Ausgaben ohne Umbuchungen, Umbuchungen mit Vorzeichen und den Kontostand am Monatsende. `until` ist der
+Einnahmen und Ausgaben ohne Umbuchungen, Umbuchungen mit Vorzeichen und den Kontostand am Monatsanfang. `until` ist der
 aktuelle Monat aus Sicht des Browsers.
+
+`GET /api/stats/days` liefert je Konto und Tag z. B. `{ "date": "2026-10-24", "accountId": 1, "balance": 3456.78 }`: den
+Kontostand am Tagesende, also nach allen Buchungen dieses Tages.
 
 Für die Import-Endpunkte ist der Body die CSV-Datei selbst (`Content-Type: application/octet-stream`), der
 Dateiname steht URI-kodiert im Header `X-File-Name`. Passt die Datei nicht, antwortet das Backend mit `400`, `413`,
