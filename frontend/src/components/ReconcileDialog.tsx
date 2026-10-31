@@ -51,12 +51,20 @@ export default function ReconcileDialog({ account, onSave, onClose }: Props) {
         Kontostand am Ende des Tages, mit allen Buchungen bis zu diesem Tag und ohne vorgemerkte Umsätze. Daraus
         berechnet die App den Kontostand für jeden Monat. Buchungen, die später für diese Zeit importiert werden,
         ändern den aktuellen Kontostand deshalb nicht.
+        {account.pendingRoundUps > 0 &&
+          " Trade Republic zieht Round-Ups schon bei der Kartenzahlung ab: Zähl die vorgemerkten Round-Ups zum dort angezeigten Kontostand dazu."}
       </p>
       <dl className="source">
         <div>
           <dt>Kontostand laut App</dt>
           <dd>{money(account.balance)}</dd>
         </div>
+        {account.pendingRoundUps > 0 && (
+          <div>
+            <dt>Für Round-Ups vorgemerkt</dt>
+            <dd>{money(account.pendingRoundUps)}</dd>
+          </div>
+        )}
         <div>
           <dt>Zuletzt abgeglichen</dt>
           <dd>

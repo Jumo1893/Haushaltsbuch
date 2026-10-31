@@ -170,6 +170,15 @@ Kontostände, nicht den aktuellen, denn die Bank hatte sie schon eingerechnet. B
 aktuellen Kontostand wie gewohnt. Ein neuer Abgleich ersetzt den alten, „Abgleich entfernen“ macht ihn rückgängig.
 Solange ein Konto mit Buchungen nicht abgeglichen ist, steht auf seiner Karte in der Übersicht „nicht abgeglichen“.
 
+**Round-Ups bei Trade Republic:** Trade Republic rundet jede Kartenzahlung auf den nächsten vollen Euro auf (volle
+Beträge um 1,00 €), zieht die Differenz gleich vom Guthaben ab und investiert sie erst am 2., 9., 16. und 23. des
+Monats. Bis dahin steht sie in keinem Export, das Guthaben in der App von Trade Republic ist also niedriger als die
+Summe der Buchungen. Der Kontostand bleibt der gebuchte Stand. Die Seite des Kontos nennt zusätzlich die vorgemerkten
+Round-Ups und den Stand bei Trade Republic: Vorgemerkt sind die Aufrundungen aller Kartenzahlungen nach dem letzten
+Sparplan-Kauf. Das ist eine Rechnung aus den Buchungen, keine Angabe der Bank. Sie setzt einfaches Aufrunden voraus
+(kein Multiplikator) und kennt keine Round-Ups, die wegen zu wenig Guthaben entfallen. Beim Abgleich die vorgemerkten
+Round-Ups zum angezeigten Guthaben addieren, sonst zählen sie doppelt, sobald der Kauf importiert wird.
+
 ### Umbuchungen
 Eine Überweisung vom Girokonto auf das Tagesgeld ist weder Einnahme noch Ausgabe, das Geld wechselt nur das Konto.
 Solche Umbuchungen zählen deshalb in allen Summen, Diagrammen und bei „Ausgaben nach Kategorie“ nicht als Einnahme
@@ -465,8 +474,8 @@ Den Kontostand laut Bank setzen beide Felder zusammen, `null` für beide entfern
 { "bankBalance": 1234.56, "bankBalanceDate": "2026-10-29" }
 ```
 Konten enthalten zusätzlich `bankBalance` und `bankBalanceDate` (ohne Abgleich `null`), `balance` (Kontostand nach
-allen Buchungen), `transactionCount` sowie `firstDate` und `lastDate` (erster und letzter Buchungstag, ohne Buchungen
-`null`).
+allen Buchungen), `pendingRoundUps` (bei Trade Republic für Round-Ups vorgemerkt, sonst 0), `transactionCount` sowie
+`firstDate` und `lastDate` (erster und letzter Buchungstag, ohne Buchungen `null`).
 
 `GET /api/stats/months` liefert je Konto und Monat z. B.
 `{ "month": "2026-10", "accountId": 1, "income": 2850, "expenses": 1935.59, "transfers": -300, "balance": 3456.78 }`:

@@ -119,6 +119,12 @@ export default function AccountPage({ id }: { id: number }) {
               ? `Mit der Bank abgeglichen: ${money(account.bankBalance)} am ${dateFormat.format(parseDate(account.bankBalanceDate))}`
               : "Noch nicht mit der Bank abgeglichen. Der Kontostand ist die Summe aller Buchungen."}
           </span>
+          {account.pendingRoundUps > 0 && (
+            <span className="reconcile">
+              {money(account.pendingRoundUps)} für Round-Ups vorgemerkt, noch nicht gebucht. Trade Republic zeigt deshalb{" "}
+              {money(account.balance - account.pendingRoundUps)}.
+            </span>
+          )}
           <button className="on-accent" onClick={() => setDialog("reconcile")}>
             Kontostand abgleichen
           </button>

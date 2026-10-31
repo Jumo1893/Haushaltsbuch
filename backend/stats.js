@@ -23,14 +23,29 @@ const TRANSFER = `(t.category = '${TRANSFER_CATEGORY}' OR EXISTS (
 const OPENING = `COALESCE(a.bank_balance - (SELECT COALESCE(sum(${SIGNED}), 0) FROM transactions t
   WHERE t.account_id = a.id AND t.date <= a.bank_balance_date), 0)`;
 
-/** Konten mit Kontostand (alle Buchungen), Anzahl der Buchungen sowie erstem und letztem Buchungstag */
+/**
+ * Für Round-Ups vorgemerkter Betrag des Kontos a. Trade Republic rundet jede Kartenzahlung auf den nächsten
+ * vollen Euro auf (volle Beträge um 1,00 €), zieht die Differenz gleich vom Guthaben ab und investiert sie erst
+ * mit den Sparplänen. Vorgemerkt sind also die Aufrundungen aller Kartenzahlungen nach dem letzten Sparplan-Kauf.
+ */
+const PENDING_ROUND_UPS = `SELECT sum(1 - t.amount % 1) AS total FROM transactions t
+  WHERE t.account_id = a.id AND t.type = 'out' AND t.details->>'bookingText' LIKE 'CARD_TRANSACTION%'
+    AND t.date > (SELECT max(p.date) FROM transactions p
+      WHERE p.account_id = a.id AND p.purpose LIKE 'Savings plan execution%')`;
+
+/**
+ * Konten mit Kontostand (alle Buchungen), vorgemerkten Round-Ups, Anzahl der Buchungen sowie erstem und
+ * letztem Buchungstag
+ */
 const ACCOUNTS = `SELECT a.id, a.name, a.kind, a.institution, a.iban,
   a.bank_balance::float8 AS "bankBalance", to_char(a.bank_balance_date, 'YYYY-MM-DD') AS "bankBalanceDate",
-  (${OPENING} + COALESCE(s.total, 0))::float8 AS balance, s.count::int AS "transactionCount",
+  (${OPENING} + COALESCE(s.total, 0))::float8 AS balance, COALESCE(r.total, 0)::float8 AS "pendingRoundUps",
+  s.count::int AS "transactionCount",
   to_char(s.first, 'YYYY-MM-DD') AS "firstDate", to_char(s.last, 'YYYY-MM-DD') AS "lastDate"
   FROM accounts a LEFT JOIN LATERAL (
     SELECT sum(${SIGNED}) AS total, count(*) AS count, min(t.date) AS first, max(t.date) AS last
-    FROM transactions t WHERE t.account_id = a.id) s ON true`;
+    FROM transactions t WHERE t.account_id = a.id) s ON true
+  LEFT JOIN LATERAL (${PENDING_ROUND_UPS}) r ON true`;
 
 /**
  * Einnahmen, Ausgaben (beide ohne Umbuchungen) und Umbuchungen (mit Vorzeichen) je Konto und Monat
