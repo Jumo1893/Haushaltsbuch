@@ -119,7 +119,7 @@ eigene Adresse und lässt sich als Lesezeichen speichern, der gewählte Monat st
 - Je Konto eine Karte mit Kontostand, Verlauf der letzten zwölf Monate und dem Tag der letzten Buchung. Liegt sie mehr
   als 30 Tage zurück, nennt die Karte stattdessen ihr Alter, ein Hinweis, dass ein Import fällig sein könnte. Ein Klick
   öffnet die Seite des Kontos.
-- Verlauf für 12 Monate, 2 Jahre oder alles: der Kontostand am Monatsende, für alle Konten zusammen oder je Konto, und
+- Verlauf für 12 Monate, 2 Jahre oder alles: der Kontostand am Monatsanfang, für alle Konten zusammen oder je Konto, und
   Einnahmen und Ausgaben je Monat mit Saldo und Sparquote. Ein Klick auf einen Monat zeigt seine Buchungen.
 - Die größten Ausgaben des laufenden Monats nach Empfänger und die letzten Buchungen
 
@@ -479,7 +479,7 @@ allen Buchungen), `pendingRoundUps` (bei Trade Republic für Round-Ups vorgemerk
 
 `GET /api/stats/months` liefert je Konto und Monat z. B.
 `{ "month": "2026-10", "accountId": 1, "income": 2850, "expenses": 1935.59, "transfers": -300, "balance": 3456.78 }`:
-Einnahmen und Ausgaben ohne Umbuchungen, Umbuchungen mit Vorzeichen und den Kontostand am Monatsende. `until` ist der
+Einnahmen und Ausgaben ohne Umbuchungen, Umbuchungen mit Vorzeichen und den Kontostand am Monatsanfang. `until` ist der
 aktuelle Monat aus Sicht des Browsers.
 
 Für die Import-Endpunkte ist der Body die CSV-Datei selbst (`Content-Type: application/octet-stream`), der

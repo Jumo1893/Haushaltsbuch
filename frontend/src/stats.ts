@@ -35,7 +35,7 @@ export function totalsByMonth(stats: MonthStat[]): MonthTotals[] {
     .sort((a, b) => a.month.localeCompare(b.month));
 }
 
-/** Kontostände am Monatsende je Konto, in der Reihenfolge von months */
+/** Kontostände am Monatsanfang je Konto, in der Reihenfolge von months */
 export function balancesOf(stats: MonthStat[], accountId: number, months: string[]) {
   const byMonth = new Map(stats.filter((s) => s.accountId === accountId).map((s) => [s.month, s.balance]));
   return months.map((m) => byMonth.get(m) ?? null);

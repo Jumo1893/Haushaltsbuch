@@ -21,9 +21,8 @@ const SPARK_MONTHS = 12;
 /** Veränderung des Gesamtsaldos in den letzten zwölf Monaten, bei kürzerer Zeit seit Beginn der Daten */
 function change(totals: MonthTotals[], index: number, total: number) {
   if (index < 0) return null;
-  if (index >= 12) return { value: total - totals[index - 12].balance, since: "in 12 Monaten" };
-  const before = totals[0].balance - totals[0].net; // Stand vor dem ersten Monat
-  return { value: total - before, since: `seit ${monthFormat.format(parseMonth(totals[0].month))}` };
+  if (index >= 12) return { value: total - totals[index - 11].balance, since: "in 12 Monaten" }; // Anfang dieses Monats = Ende des Monats davor
+  return { value: total - totals[0].balance, since: `seit ${monthFormat.format(parseMonth(totals[0].month))}` };
 }
 
 /** Summe über die Monate eines Zeitraums, mit Sparquote (Anteil der Einnahmen, der übrig bleibt) */
@@ -140,7 +139,7 @@ export default function DashboardPage() {
           <div className={stats.loading ? "stale" : undefined}>
             <section>
               <div className="section-head">
-                <h3 className="h2">Kontostand</h3>
+                <h3 className="h2">Kontostand am Monatsanfang</h3>
                 {accounts.length > 1 && (
                   <Segmented
                     label="Darstellung"
@@ -155,7 +154,7 @@ export default function DashboardPage() {
               </div>
               {view === "total" || accounts.length < 2 ? (
                 <LineChart
-                  label="Kontostand aller Konten am Monatsende"
+                  label="Kontostand aller Konten am Monatsanfang"
                   months={months}
                   series={[{ key: "total", name: "Alle Konten", color: "var(--ink)", values: shown.map((t) => t.balance) }]}
                   details={accounts.map((a) => ({ key: a.id, name: a.name, values: balancesOf(stats.data ?? [], a.id, months) }))}
@@ -172,7 +171,7 @@ export default function DashboardPage() {
                     ))}
                   </ul>
                   <LineChart
-                    label="Kontostand je Konto am Monatsende"
+                    label="Kontostand je Konto am Monatsanfang"
                     months={months}
                     series={accounts.map((a) => ({
                       key: a.id,

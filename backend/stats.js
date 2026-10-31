@@ -49,8 +49,9 @@ const ACCOUNTS = `SELECT a.id, a.name, a.kind, a.institution, a.iban,
 
 /**
  * Einnahmen, Ausgaben (beide ohne Umbuchungen) und Umbuchungen (mit Vorzeichen) je Konto und Monat
- * sowie der Kontostand am Monatsende. Lückenlos vom ersten Monat mit Buchungen bis zum Monat `until`
- * (YYYY-MM) bzw. bis zum letzten Monat mit Buchungen, falls der später liegt.
+ * sowie der Kontostand am Monatsanfang, also vor allen Buchungen des Monats. Lückenlos vom ersten
+ * Monat mit Buchungen bis zum Monat `until` (YYYY-MM) bzw. bis zum letzten Monat mit Buchungen,
+ * falls der später liegt.
  * Mit `accountId` nur für dieses Konto; ohne für alle Konten, auch solche ohne Buchungen.
  */
 async function monthlyStats(db, until, accountId = null) {
@@ -75,7 +76,8 @@ async function monthlyStats(db, until, accountId = null) {
      SELECT to_char(m.month, 'YYYY-MM') AS month, o.id AS "accountId",
        COALESCE(f.income, 0)::float8 AS income, COALESCE(f.expenses, 0)::float8 AS expenses,
        COALESCE(f.transfers, 0)::float8 AS transfers,
-       (o.amount + sum(COALESCE(f.net, 0)) OVER (PARTITION BY o.id ORDER BY m.month))::float8 AS balance
+       (o.amount + COALESCE(sum(COALESCE(f.net, 0)) OVER (PARTITION BY o.id ORDER BY m.month
+         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0))::float8 AS balance
      FROM months m CROSS JOIN opening o
      LEFT JOIN flows f ON f.account_id = o.id AND f.month = m.month
      ORDER BY m.month, o.id`,

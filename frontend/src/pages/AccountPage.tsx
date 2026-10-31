@@ -140,9 +140,9 @@ export default function AccountPage({ id }: { id: number }) {
           </div>
           <div className={stats.loading ? "stale" : undefined}>
             <section>
-              <h3 className="h2">Kontostand</h3>
+              <h3 className="h2">Kontostand am Monatsanfang</h3>
               <LineChart
-                label={`Kontostand ${account.name} am Monatsende`}
+                label={`Kontostand ${account.name} am Monatsanfang`}
                 months={shown.map((t) => t.month)}
                 series={[{ key: id, name: account.name, color: "var(--ink)", values: shown.map((t) => t.balance) }]}
                 area

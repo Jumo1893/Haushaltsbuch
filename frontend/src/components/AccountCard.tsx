@@ -15,7 +15,7 @@ function lastBooking(date: string | null) {
 interface Props {
   account: Account;
   color: string;
-  /** Kontostände am Ende der letzten Monate, für den kleinen Verlauf */
+  /** Kontostände am Anfang der letzten Monate, für den kleinen Verlauf */
   balances: number[];
 }
 
