@@ -1,12 +1,59 @@
-import { roundCents } from "./format";
-import type { MonthStat, Transaction } from "./types";
+import { monthsBefore, roundCents } from "./format";
+import type { DayBalance, MonthStat, Transaction } from "./types";
 
 /** Zeiträume der Diagramme in Monaten, 0 = alles */
 export const RANGES: [number, string][] = [
+  [1, "1 Monat"],
+  [3, "3 Monate"],
   [12, "12 Monate"],
   [24, "2 Jahre"],
   [0, "Alles"],
 ];
+
+/** Bis zu so vielen Monaten zeigt der Verlauf den Kontostand je Tag statt je Monat */
+export const DAILY_MONTHS = 3;
+
+const isDaily = (range: number) => range > 0 && range <= DAILY_MONTHS;
+
+/** Wählbare Zeiträume bei count Monaten mit Daten: längere als zwölf Monate erst, wenn es so viele gibt */
+export const rangesFor = (count: number) => (count > 12 ? RANGES : RANGES.filter(([months]) => months > 0 && months <= 12));
+
+/** Kontostände für das Liniendiagramm eines Zeitraums */
+export interface BalanceCourse {
+  unit: "month" | "day";
+  /** Monate (YYYY-MM) oder Tage (YYYY-MM-DD), aufsteigend */
+  points: string[];
+  /** Summe der Konten je Punkt */
+  total: number[];
+  /** Kontostände eines Kontos, in der Reihenfolge von points */
+  of: (accountId: number) => (number | null)[];
+  /** Wann im Monat oder Tag der Wert gilt, für die Beschriftung */
+  when: string;
+}
+
+/** Kontostände des Zeitraums range: je Tag aus days bis today, sonst je Monat aus stats */
+export function balanceCourse(range: number, stats: MonthStat[], days: DayBalance[], today: string): BalanceCourse {
+  const daily = isDaily(range);
+  const start = daily ? monthsBefore(today, range) : "";
+  const rows = daily
+    ? days.filter((d) => d.date >= start).map((d) => ({ point: d.date, accountId: d.accountId, balance: d.balance }))
+    : stats.map((s) => ({ point: s.month, accountId: s.accountId, balance: s.balance }));
+  const all = [...new Set(rows.map((r) => r.point))].sort();
+  const points = range && !daily ? all.slice(-range) : all;
+  const sums = new Map<string, number>();
+  const balances = new Map<string, number>();
+  for (const r of rows) {
+    sums.set(r.point, (sums.get(r.point) ?? 0) + r.balance);
+    balances.set(`${r.accountId}/${r.point}`, r.balance);
+  }
+  return {
+    unit: daily ? "day" : "month",
+    points,
+    total: points.map((p) => roundCents(sums.get(p) ?? 0)),
+    of: (accountId) => points.map((p) => balances.get(`${accountId}/${p}`) ?? null),
+    when: daily ? "am Tagesende" : "am Monatsanfang",
+  };
+}
 
 /** Werte eines Monats; net ist die Änderung des Kontostands: Einnahmen − Ausgaben + Umbuchungen */
 export interface MonthTotals {

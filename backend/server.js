@@ -3,9 +3,9 @@ const express = require("express");
 const { Pool } = require("pg");
 const { loadProfiles } = require("./import/profiles");
 const { createImportRouter } = require("./import/routes");
-const { readTransaction, lockedFields, isMonth, accountParam, readListQuery } = require("./transactions");
+const { readTransaction, lockedFields, isDate, isMonth, accountParam, readListQuery } = require("./transactions");
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
-const { TRANSFER, ACCOUNTS, monthlyStats } = require("./stats");
+const { TRANSFER, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
 // als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
@@ -277,6 +277,18 @@ app.get("/api/stats/months", async (req, res) => {
   if (Number.isNaN(account)) return res.status(400).json({ error: "Ungültiges Konto" });
   try {
     res.json(await monthlyStats(pool, req.query.until, account));
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Kontostand je Tag und Konto für die kurzen Zeiträume des Verlaufs
+app.get("/api/stats/days", async (req, res) => {
+  if (!isDate(req.query.from) || !isDate(req.query.until)) {
+    return res.status(400).json({ error: "from=YYYY-MM-DD und until=YYYY-MM-DD erforderlich" });
+  }
+  const account = accountParam(req.query.account);
+  if (Number.isNaN(account)) return res.status(400).json({ error: "Ungültiges Konto" });
+  try {
+    res.json(await dailyBalances(pool, req.query.from, req.query.until, account));
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 

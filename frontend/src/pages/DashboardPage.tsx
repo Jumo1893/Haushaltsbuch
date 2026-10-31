@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fetchLatest, fetchMonthStats, fetchTransactions, updateTransaction } from "../api";
+import { fetchDayBalances, fetchLatest, fetchMonthStats, fetchTransactions, updateTransaction } from "../api";
 import AccountCard from "../components/AccountCard";
 import AccountDialog from "../components/AccountDialog";
 import CashflowChart from "../components/charts/CashflowChart";
@@ -10,9 +10,9 @@ import Segmented from "../components/Segmented";
 import TopPayees from "../components/TopPayees";
 import TransactionList from "../components/TransactionList";
 import { OFFLINE, useData, useLoad } from "../data";
-import { money, monthFormat, monthName, parseMonth, percent, signed, ym } from "../format";
+import { money, monthFormat, monthName, monthsBefore, parseMonth, percent, signed, today, ym } from "../format";
 import { Link, navigate, useTitle } from "../router";
-import { RANGES, balancesOf, totalsByMonth, type MonthTotals } from "../stats";
+import { DAILY_MONTHS, balanceCourse, balancesOf, rangesFor, totalsByMonth, type MonthTotals } from "../stats";
 import type { Transaction } from "../types";
 
 /** Wie viele Monate die kleinen Verläufe der Kontokarten zeigen */
@@ -37,7 +37,9 @@ function periodSummary(rows: MonthTotals[]) {
 export default function DashboardPage() {
   const { accounts, loaded, colorOf, createAccount, refresh } = useData();
   const current = ym(new Date());
+  const day = today();
   const stats = useLoad(() => fetchMonthStats(current), [current]);
+  const days = useLoad(() => fetchDayBalances(monthsBefore(day, DAILY_MONTHS), day), [day]);
   const monthItems = useLoad(() => fetchTransactions(current), [current]);
   const latest = useLoad(() => fetchLatest(6), []);
   const [range, setRange] = useState(12);
@@ -48,11 +50,11 @@ export default function DashboardPage() {
 
   const totals = totalsByMonth(stats.data ?? []);
   const shown = range ? totals.slice(-range) : totals;
-  const months = shown.map((t) => t.month);
+  const course = balanceCourse(range, stats.data ?? [], days.data ?? [], day);
   const sparkMonths = totals.slice(-SPARK_MONTHS).map((t) => t.month);
   const total = accounts.reduce((sum, a) => sum + a.balance, 0);
   const delta = change(totals, totals.findIndex((t) => t.month === current), total);
-  const failed = stats.failed || monthItems.failed || latest.failed;
+  const failed = stats.failed || days.failed || monthItems.failed || latest.failed;
 
   const newAccount = (
     <AccountDialog
@@ -134,12 +136,12 @@ export default function DashboardPage() {
         <>
           <div className="section-head">
             <h2>Verlauf</h2>
-            {totals.length > 12 && <Segmented label="Zeitraum" options={RANGES} value={range} onChange={setRange} />}
+            <Segmented label="Zeitraum" options={rangesFor(totals.length)} value={range} onChange={setRange} />
           </div>
-          <div className={stats.loading ? "stale" : undefined}>
+          <div className={stats.loading || days.loading ? "stale" : undefined}>
             <section>
               <div className="section-head">
-                <h3 className="h2">Kontostand am Monatsanfang</h3>
+                <h3 className="h2">Kontostand {course.when}</h3>
                 {accounts.length > 1 && (
                   <Segmented
                     label="Darstellung"
@@ -154,10 +156,11 @@ export default function DashboardPage() {
               </div>
               {view === "total" || accounts.length < 2 ? (
                 <LineChart
-                  label="Kontostand aller Konten am Monatsanfang"
-                  months={months}
-                  series={[{ key: "total", name: "Alle Konten", color: "var(--ink)", values: shown.map((t) => t.balance) }]}
-                  details={accounts.map((a) => ({ key: a.id, name: a.name, values: balancesOf(stats.data ?? [], a.id, months) }))}
+                  label={`Kontostand aller Konten ${course.when}`}
+                  months={course.points}
+                  unit={course.unit}
+                  series={[{ key: "total", name: "Alle Konten", color: "var(--ink)", values: course.total }]}
+                  details={accounts.map((a) => ({ key: a.id, name: a.name, values: course.of(a.id) }))}
                   area
                 />
               ) : (
@@ -171,13 +174,14 @@ export default function DashboardPage() {
                     ))}
                   </ul>
                   <LineChart
-                    label="Kontostand je Konto am Monatsanfang"
-                    months={months}
+                    label={`Kontostand je Konto ${course.when}`}
+                    months={course.points}
+                    unit={course.unit}
                     series={accounts.map((a) => ({
                       key: a.id,
                       name: a.name,
                       color: colorOf(a.id),
-                      values: balancesOf(stats.data ?? [], a.id, months),
+                      values: course.of(a.id),
                     }))}
                   />
                 </>
