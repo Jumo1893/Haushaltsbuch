@@ -34,6 +34,7 @@ export interface Account extends NewAccount {
   bankBalance: number | null; // Kontostand laut Bank am Tag bankBalanceDate, daraus ergeben sich die Kontostände
   bankBalanceDate: string | null; // YYYY-MM-DD
   balance: number; // Kontostand nach allen Buchungen
+  pendingRoundUps: number; // bei Trade Republic für Round-Ups vorgemerkt, noch nicht gebucht
   transactionCount: number;
   firstDate: string | null; // erster und letzter Buchungstag, null ohne Buchungen
   lastDate: string | null;
