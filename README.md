@@ -15,9 +15,10 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
 ## Funktionen
 - Übersicht mit Gesamtsaldo, Kontoständen, Verlauf und Einnahmen und Ausgaben je Monat, dazu eine eigene Seite je
   Konto (siehe „Oberfläche“)
-- Buchungen (Einnahme oder Ausgabe) mit Betrag, Datum, Konto, Kategorie und Notiz von jeder Seite aus erfassen,
-  bearbeiten und löschen. Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen lassen sich
-  Kategorie und Notiz ändern; Art, Betrag, Datum und Konto stehen durch den Import fest und bleiben, wie sie sind.
+- Buchungen (Ausgabe, Einnahme oder Umbuchung) mit Betrag, Datum, Konto, Kategorie und Notiz von jeder Seite aus
+  erfassen, bearbeiten und löschen. Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen
+  lassen sich Kategorie, Notiz und die Kennzeichnung als Umbuchung ändern; Richtung, Betrag, Datum und Konto stehen durch
+  den Import fest und bleiben, wie sie sind.
 - Buchungen über alle Monate und Konten suchen und mehrere auf einmal bearbeiten, z. B. alle Einkäufe bei Penny auf
   die Kategorie „Lebensmittel“ setzen (siehe „Oberfläche“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
@@ -29,11 +30,13 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
 - Helles und dunkles Design (folgt der Systemeinstellung), für Mobilgeräte geeignet
 
 Kategorien:
-- **Ausgaben:** Wohnen, Lebensmittel, Mobilität, Freizeit, Versicherung, Gesundheit, Sonstiges, Umbuchung
-- **Einnahmen:** Gehalt, Nebenverdienst, Erstattung, Sonstiges, Umbuchung
+- **Ausgaben:** Wohnen, Lebensmittel, Mobilität, Freizeit, Versicherung, Gesundheit, Sonstiges
+- **Einnahmen:** Gehalt, Nebenverdienst, Erstattung, Sonstiges
+- **Umbuchungen:** Sparen, Investieren, Bargeld, Sonstiges
 
-„Umbuchung“ kennzeichnet Geld, das zwischen eigenen Konten wandert (siehe „Umbuchungen“). Die Kategorien sind in
-`frontend/src/types.ts` festgelegt und lassen sich dort anpassen.
+Umbuchungen sind Geld, das zwischen eigenen Konten wandert (siehe „Umbuchungen“). Ihre Kategorie dient nur der Ordnung
+und fließt in keine Auswertung ein. Die Kategorien sind in `frontend/src/types.ts` festgelegt und lassen sich dort
+anpassen.
 
 ## Voraussetzungen
 - [Podman](https://podman.io/docs/installation) (z. B. Podman Desktop) mit einem Compose-Provider:
@@ -140,9 +143,9 @@ Wörtern müssen alle vorkommen. Die Filter stehen in der Adresse (z. B. `/buchu
 Kästchen auswählen, mit „Alle auswählen“ alle gezeigten.
 - Die Auswahl bleibt beim Blättern und Suchen bestehen und lässt sich so über Monate und Konten zusammenstellen. Die
   Leiste unten nennt, wie viele ausgewählte Buchungen gerade nicht zu sehen sind, der Dialog listet alle auf.
-- „Bearbeiten“ ändert Kategorie und Notiz aller ausgewählten Buchungen, auch importierter. Was auf „Nicht ändern“ steht,
-  bleibt, wie es ist. Enthält die Auswahl Ausgaben und Einnahmen, lässt sich für beide je eine Kategorie wählen, weil
-  sie verschiedene Kategorien haben.
+- „Bearbeiten“ ändert Kategorie und Notiz aller ausgewählten Buchungen, auch importierter, und kann sie als Umbuchung
+  kennzeichnen oder das aufheben. Was auf „Nicht ändern“ steht, bleibt, wie es ist. Enthält die Auswahl mehrere Arten,
+  lässt sich für jede eine Kategorie wählen, weil sie verschiedene Kategorien haben.
 - Eine neue Notiz ersetzt vorhandene Notizen, „Vorhandene Notizen entfernen“ leert sie.
 - Die Änderung lässt sich nicht rückgängig machen.
 
@@ -169,6 +172,9 @@ zu welchem Konto ein Umsatz gehört.
   (z. B. Trade Republic) wird das Konto in der Vorschau gewählt.
 - **Ändern und Löschen:** Auf der Seite des Kontos unter „Bearbeiten“, z. B. um ein beim Import angelegtes Konto
   umzubenennen. Löschen lässt sich nur ein Konto ohne Buchungen, dann steht dort „Konto löschen“.
+- **Weitere IBANs:** Geld läuft nicht immer über die IBAN des Kontos, manche Anbieter ziehen Lastschriften z. B. über
+  ein anderes Konto ein. Solche IBANs lassen sich beim Konto unter „Weitere IBANs“ eintragen. Buchungen anderer eigener
+  Konten mit diesen IBANs gelten dann als Umbuchung. Der Import ordnet über sie keine Umsätze zu.
 - **Umstellung bestehender Daten:** Beim ersten Start dieser Version ordnet das Backend alle vorhandenen Buchungen
   einmalig einem Konto zu und legt die Konten dafür an: importierte mit eigener IBAN dem Konto dieser IBAN,
   importierte ohne IBAN einem Konto je Importprofil (z. B. „Trade Republic“), von Hand erfasste dem Konto „Bargeld“.
@@ -198,16 +204,28 @@ Round-Ups zum angezeigten Guthaben addieren, sonst zählen sie doppelt, sobald d
 
 ### Umbuchungen
 Eine Überweisung vom Girokonto auf das Tagesgeld ist weder Einnahme noch Ausgabe, das Geld wechselt nur das Konto.
-Solche Umbuchungen zählen deshalb in allen Summen, Diagrammen und bei „Ausgaben nach Kategorie“ nicht als Einnahme
-oder Ausgabe. Sie stehen getrennt als „Umbuchungen“ und zählen zum Saldo, denn sie ändern den Kontostand. Als
-Umbuchung gilt eine Buchung,
-- deren Gegenpartei-IBAN zu einem anderen eigenen Konto gehört (bei CSV-CAMT V8 die Spalte `Kontonummer/IBAN`, bei
-  Trade Republic `counterparty_iban`). Dafür muss beim Zielkonto die IBAN eingetragen sein; wird sie später ergänzt,
-  gilt das auch für schon importierte Buchungen. Die Liste markiert sie mit „Umbuchung“.
-- mit der Kategorie „Umbuchung“, z. B. für Buchungen ohne IBAN wie Bargeld vom Automaten, das ins Konto „Bargeld“
-  wandert.
+Umbuchung ist deshalb neben Ausgabe und Einnahme eine eigene Art. Umbuchungen zählen in allen Summen, Diagrammen und
+bei „Ausgaben nach Kategorie“ nicht als Einnahme oder Ausgabe. Sie stehen getrennt als „Umbuchungen“ und zählen zum
+Saldo, denn sie ändern den Kontostand. In den Listen tragen sie neben ihrer Kategorie den Zusatz „Umbuchung“, ihre
+Beträge stehen grau statt grün oder rot.
 
-In den Listen stehen die Beträge von Umbuchungen grau statt grün oder rot.
+Die App erkennt Umbuchungen automatisch und wählt die Art dann vor. Als Umbuchung gilt eine Buchung,
+- deren Gegenpartei-IBAN zu einem anderen eigenen Konto gehört (bei CSV-CAMT V8 die Spalte `Kontonummer/IBAN`, bei
+  Trade Republic `counterparty_iban`). Dafür muss beim Zielkonto die IBAN oder eine weitere IBAN eingetragen sein; wird
+  sie später ergänzt, gilt das auch für schon importierte Buchungen.
+- ohne IBAN im Export, deren Buchungsart bei Trade Republic für Geld von oder zu einer anderen Bank steht
+  (`CUSTOMER_INPAYMENT`, `TRANSFER_INBOUND`, `TRANSFER_INSTANT_INBOUND`, `TRANSFER_INSTANT_OUTBOUND`). Ältere Exporte
+  nennen dafür weder IBAN noch Gegenpartei. Steht eine IBAN im Export, entscheidet nur sie.
+
+Liegt die Erkennung daneben oder gibt es keine IBAN, z. B. bei Bargeld vom Automaten, lässt sich die Art beim Bearbeiten
+ändern, auch bei importierten Buchungen. Diese Wahl gilt dann dauerhaft, unabhängig von der Erkennung.
+
+Auch eine Umbuchung behält ihre Richtung, sie entscheidet über das Vorzeichen des Betrags: Abbuchung senkt den
+Kontostand, Gutschrift erhöht ihn. Beim Erfassen von Hand fragt das Formular deshalb danach, bei importierten Buchungen
+steht sie durch den Import fest.
+
+Die frühere Kategorie „Umbuchung“ gibt es nicht mehr. Beim ersten Start dieser Version werden Buchungen mit dieser
+Kategorie einmalig zu Umbuchungen mit der Kategorie „Sonstiges“.
 
 ## CSV-Import
 Auf der Seite „Import“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen. Kommt man über „Umsätze importieren“
@@ -388,7 +406,7 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | Spalte       | Typ             | Hinweis                         |
 |--------------|-----------------|---------------------------------|
 | `id`         | `SERIAL`        | Primärschlüssel                 |
-| `type`       | `TEXT`          | `in` (Einnahme) oder `out` (Ausgabe) |
+| `type`       | `TEXT`          | Richtung: `in` (erhöht den Kontostand) oder `out` (senkt ihn), auch bei Umbuchungen |
 | `amount`     | `NUMERIC(12,2)` | immer > 0                       |
 | `category`   | `TEXT`          | max. 40 Zeichen                 |
 | `date`       | `DATE`          | Buchungsdatum                   |
@@ -400,6 +418,7 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | `import_id`  | `INTEGER`       | Verweis auf `imports.id`, leer bei Erfassung von Hand |
 | `import_hash` | `TEXT`         | Fingerabdruck für die Duplikaterkennung |
 | `account_id` | `INTEGER`       | Verweis auf `accounts.id`, Pflicht |
+| `transfer_override` | `BOOLEAN` | Umbuchung von Hand festgelegt (ja oder nein), leer: automatisch erkennen (siehe „Umbuchungen“) |
 
 ### Tabelle `accounts`
 Ein Eintrag je Konto.
@@ -411,6 +430,7 @@ Ein Eintrag je Konto.
 | `kind`        | `TEXT`        | `giro`, `savings` (Tagesgeld), `depot`, `credit_card`, `cash` (Bargeld) oder `other` |
 | `institution` | `TEXT`        | Bank, optional |
 | `iban`        | `TEXT`        | eigene IBAN ohne Leerzeichen, optional, höchstens ein Konto je IBAN |
+| `extra_ibans` | `TEXT[]`      | weitere IBANs ohne Leerzeichen, erkennen Umbuchungen, ordnen aber keine Umsätze zu |
 | `created_at`  | `TIMESTAMPTZ` | Zeitpunkt der Anlage |
 | `bank_balance` | `NUMERIC(12,2)` | Kontostand laut Bank am Ende des Tages `bank_balance_date`, optional (siehe „Kontostand abgleichen“) |
 | `bank_balance_date` | `DATE`   | Tag dieses Kontostands; gesetzt genau dann, wenn `bank_balance` gesetzt ist |
@@ -453,9 +473,9 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/health`                        | Statusprüfung, liefert `{ "ok": true }` |
 | `GET`    | `/api/transactions?month=YYYY-MM`    | Buchungen eines Monats, neueste zuerst. Mit `&account=ID` nur die eines Kontos |
 | `GET`    | `/api/transactions?limit=N`          | Die neuesten N Buchungen (1 bis 100), auch mit `&account=ID` |
-| `GET`    | `/api/transactions/search?q=TEXT&category=NAME&type=out&account=ID` | Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst. Alle Parameter sind optional. `q` sucht in Gegenpartei, Verwendungszweck und Notiz, bei mehreren Wörtern müssen alle vorkommen |
+| `GET`    | `/api/transactions/search?q=TEXT&category=NAME&type=out&account=ID` | Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst. Alle Parameter sind optional. `q` sucht in Gegenpartei, Verwendungszweck und Notiz, bei mehreren Wörtern müssen alle vorkommen. `type` ist `out` oder `in` (jeweils ohne Umbuchungen) oder `transfer` |
 | `POST`   | `/api/transactions`                  | Buchung anlegen, liefert sie mit `201` zurück |
-| `PATCH`  | `/api/transactions`                  | Kategorie und Notiz mehrerer Buchungen in einem Schritt ändern, liefert `{ "updated": 3 }` |
+| `PATCH`  | `/api/transactions`                  | Kategorie, Notiz und Umbuchung mehrerer Buchungen in einem Schritt ändern, liefert `{ "updated": 3 }` |
 | `PATCH`  | `/api/transactions/:id`              | Buchung ändern, nur die übergebenen Felder; liefert die geänderte Buchung |
 | `DELETE` | `/api/transactions/:id`              | Buchung löschen, `204` |
 | `GET`    | `/api/stats/months?until=YYYY-MM`    | Werte je Konto und Monat, lückenlos vom ersten Monat mit Buchungen bis `until` (bzw. bis zur letzten Buchung). Mit `&account=ID` nur für ein Konto |
@@ -473,32 +493,35 @@ Body für `POST /api/transactions`:
 ```json
 { "type": "out", "amount": 42.5, "category": "Lebensmittel", "date": "2026-10-27", "note": "Wocheneinkauf", "accountId": 1 }
 ```
+`type` ist die Richtung, auch bei einer Umbuchung. Optional legt `"transfer": true` oder `false` von Hand fest, ob die
+Buchung eine Umbuchung ist; ohne Angabe wird das automatisch erkannt.
 Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`, auch wenn es das Konto nicht gibt.
 Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`)
-sowie `transfer`: `true` bei einer Umbuchung zwischen eigenen Konten (siehe „Umbuchungen“).
+sowie `transfer`: `true` bei einer Umbuchung zwischen eigenen Konten, von Hand festgelegt oder erkannt (siehe
+„Umbuchungen“).
 
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
-`{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category` und
-`note` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
+`{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category`, `note` und
+`transfer` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
 
 Body für `PATCH /api/transactions`: die IDs und die Änderung, z. B.
 `{ "ids": [12, 57, 103], "changes": { "category": "Lebensmittel", "note": "Einkauf beim Supermarkt" } }`. In `changes`
-sind nur `category` und `note` erlaubt, sonst antwortet das Backend mit `400`. IDs, die es nicht (mehr) gibt, werden
-übergangen, `updated` nennt die Zahl der geänderten Buchungen.
+sind nur `category`, `note` und `transfer` erlaubt, sonst antwortet das Backend mit `400`. IDs, die es nicht (mehr)
+gibt, werden übergangen, `updated` nennt die Zahl der geänderten Buchungen.
 
-Body für `POST /api/accounts` (`institution` und `iban` sind optional):
+Body für `POST /api/accounts` (`institution`, `iban` und `extraIbans` sind optional):
 ```json
-{ "name": "Girokonto", "kind": "giro", "institution": "BW-Bank", "iban": "DE89 3704 0044 0532 0130 00" }
+{ "name": "Girokonto", "kind": "giro", "institution": "BW-Bank", "iban": "DE89 3704 0044 0532 0130 00", "extraIbans": [] }
 ```
-`kind` ist eine der Arten aus der Tabelle `accounts`. Die IBAN wird ohne Leerzeichen gespeichert und auf ihre
-Prüfziffer geprüft; `"iban": null` bei `PATCH` entfernt sie. Ungültige Eingaben: `400` mit Grund, IBAN schon bei einem
-anderen Konto: `409`.
+`kind` ist eine der Arten aus der Tabelle `accounts`. IBANs werden ohne Leerzeichen gespeichert und auf ihre
+Prüfziffer geprüft; `"iban": null` bei `PATCH` entfernt die IBAN, `"extraIbans": []` die weiteren. Ungültige Eingaben:
+`400` mit Grund, IBAN schon bei einem anderen Konto: `409`.
 
 Den Kontostand laut Bank setzen beide Felder zusammen, `null` für beide entfernt ihn (siehe „Kontostand abgleichen“):
 ```json
 { "bankBalance": 1234.56, "bankBalanceDate": "2026-10-29" }
 ```
-Konten enthalten zusätzlich `bankBalance` und `bankBalanceDate` (ohne Abgleich `null`), `balance` (Kontostand nach
+Konten enthalten zusätzlich `extraIbans`, `bankBalance` und `bankBalanceDate` (ohne Abgleich `null`), `balance` (Kontostand nach
 allen Buchungen), `pendingRoundUps` (bei Trade Republic für Round-Ups vorgemerkt, sonst 0), `transactionCount` sowie
 `firstDate` und `lastDate` (erster und letzter Buchungstag, ohne Buchungen `null`).
 

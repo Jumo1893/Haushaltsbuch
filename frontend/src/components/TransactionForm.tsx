@@ -1,11 +1,26 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 import { today } from "../format";
-import { CATEGORIES, type Account, type NewAccount, type NewTransaction, type TxType } from "../types";
+import {
+  CATEGORIES,
+  kindOf,
+  type Account,
+  type NewAccount,
+  type NewTransaction,
+  type TxKind,
+  type TxType,
+} from "../types";
 import AccountSelect from "./AccountSelect";
+import Segmented from "./Segmented";
 
-const TYPES: [TxType, string][] = [
+const KINDS: [TxKind, string][] = [
   ["out", "Ausgabe"],
   ["in", "Einnahme"],
+  ["transfer", "Umbuchung"],
+];
+
+const DIRECTIONS: [TxType, string][] = [
+  ["out", "Abbuchung"],
+  ["in", "Gutschrift"],
 ];
 
 interface Props {
@@ -16,7 +31,7 @@ interface Props {
   accounts: Account[];
   /** Legt ein Konto aus der Kontoauswahl heraus an. */
   onCreateAccount: (account: NewAccount) => Promise<Account>;
-  /** Art, Betrag, Datum und Konto sperren, z. B. bei importierten Buchungen. */
+  /** Richtung, Betrag, Datum und Konto sperren, z. B. bei importierten Buchungen. */
   lockBankData?: boolean;
   submitLabel?: string;
   /** Liefert true, wenn gespeichert wurde – bei einer neuen Buchung wird das Formular dann geleert. */
@@ -36,6 +51,7 @@ export default function TransactionForm({
 }: Props) {
   const id = useId(); // eindeutige IDs, weil das Formular mehrfach auf der Seite stehen kann
   const [type, setType] = useState<TxType>(initial?.type ?? "out");
+  const [transfer, setTransfer] = useState(initial?.transfer ?? false);
   const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
   const [date, setDate] = useState(initial?.date ?? today);
   const [category, setCategory] = useState(initial?.category ?? CATEGORIES.out[0]);
@@ -46,19 +62,22 @@ export default function TransactionForm({
   // Ohne Auswahl gilt das erste Konto, sobald die Konten geladen sind
   const account = accountId ?? accounts[0]?.id ?? null;
 
-  // Eine Kategorie, die nicht (mehr) in der Liste steht, bleibt auswählbar
-  const categories = CATEGORIES[type].includes(category) ? CATEGORIES[type] : [category, ...CATEGORIES[type]];
+  const kind = kindOf({ type, transfer });
 
-  const changeType = (t: TxType) => {
-    setType(t);
-    setCategory(CATEGORIES[t][0]);
+  // Eine Kategorie, die nicht (mehr) in der Liste steht, bleibt auswählbar
+  const categories = CATEGORIES[kind].includes(category) ? CATEGORIES[kind] : [category, ...CATEGORIES[kind]];
+
+  const changeKind = (k: TxKind) => {
+    setTransfer(k === "transfer");
+    if (k !== "transfer") setType(k);
+    if (!CATEGORIES[k].includes(category)) setCategory(CATEGORIES[k][0]);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(amount);
     if (!(amt > 0) || account === null) return;
-    const ok = await onSubmit({ type, amount: amt, category, date, note: note.trim(), accountId: account });
+    const ok = await onSubmit({ type, transfer, amount: amt, category, date, note: note.trim(), accountId: account });
     if (ok && !initial) {
       setAmount("");
       setNote("");
@@ -68,21 +87,27 @@ export default function TransactionForm({
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="full seg" role="radiogroup" aria-label="Art">
-        {TYPES.map(([value, label]) => (
-          <label key={value}>
-            <input
-              type="radio"
-              name={`${id}-type`}
-              value={value}
-              checked={type === value}
-              disabled={lockBankData}
-              onChange={() => changeType(value)}
-            />
-            <span>{label}</span>
-          </label>
-        ))}
-      </div>
+      <Segmented
+        className="full seg"
+        label="Art"
+        options={KINDS}
+        value={kind}
+        isDisabled={(k) => lockBankData && k !== "transfer" && k !== type}
+        onChange={changeKind}
+      />
+      {transfer && (
+        <>
+          <Segmented
+            className="full seg"
+            label="Richtung"
+            options={DIRECTIONS}
+            value={type}
+            isDisabled={() => lockBankData}
+            onChange={setType}
+          />
+          <small className="hint full">Zählt weder als Einnahme noch als Ausgabe, ändert aber den Kontostand.</small>
+        </>
+      )}
       <div>
         <label htmlFor={`${id}-amount`}>Betrag in €</label>
         <input

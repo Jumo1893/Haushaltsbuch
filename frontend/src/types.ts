@@ -1,4 +1,8 @@
+/** Richtung einer Buchung: "in" erhöht den Kontostand, "out" senkt ihn, auch bei Umbuchungen */
 export type TxType = "in" | "out";
+
+/** Art einer Buchung in der Oberfläche: Einnahme, Ausgabe oder Umbuchung */
+export type TxKind = TxType | "transfer";
 
 export interface NewTransaction {
   type: TxType;
@@ -7,20 +11,21 @@ export interface NewTransaction {
   date: string; // YYYY-MM-DD
   note: string;
   accountId: number;
+  transfer: boolean; // Umbuchung zwischen eigenen Konten: zählt weder als Einnahme noch als Ausgabe
 }
 
 /** Geänderte Felder einer Buchung */
 export type TransactionChanges = Partial<NewTransaction>;
 
 /** Änderung mehrerer Buchungen auf einmal: die Felder, die sich auch bei importierten Buchungen ändern lassen */
-export type BulkChanges = Pick<TransactionChanges, "category" | "note">;
+export type BulkChanges = Pick<TransactionChanges, "category" | "note" | "transfer">;
 
 /** Filter der Suche über alle Monate; leere Werte filtern nicht */
 export interface TransactionFilters {
   text: string; // Wörter in Gegenpartei, Verwendungszweck oder Notiz
   account: number | null;
   category: string;
-  type: TxType | "";
+  type: TxKind | "";
 }
 
 export const NO_FILTERS: TransactionFilters = { text: "", account: null, category: "", type: "" };
@@ -33,8 +38,10 @@ export interface Transaction extends NewTransaction {
   counterparty: string;
   purpose: string;
   importId: number | null; // gesetzt, wenn die Buchung aus einem CSV-Import stammt
-  transfer: boolean; // Umbuchung zwischen eigenen Konten: zählt weder als Einnahme noch als Ausgabe
 }
+
+export const kindOf = ({ type, transfer }: Pick<NewTransaction, "type" | "transfer">): TxKind =>
+  transfer ? "transfer" : type;
 
 export type AccountKind = "giro" | "savings" | "depot" | "credit_card" | "cash" | "other";
 
@@ -43,6 +50,7 @@ export interface NewAccount {
   kind: AccountKind;
   institution: string;
   iban: string | null; // ohne Leerzeichen; Umsätze mit dieser IBAN ordnet der Import dem Konto zu
+  extraIbans: string[]; // weitere IBANs, z. B. der Lastschrifteinzug: erkennen Umbuchungen, ordnen aber nichts zu
 }
 
 export interface Account extends NewAccount {
@@ -146,16 +154,14 @@ export interface ProfileMismatch {
   missing: string[];
 }
 
-/** Kategorie für Umbuchungen zwischen eigenen Konten, z. B. Bargeld vom Girokonto ins Konto „Bargeld“ */
-export const TRANSFER_CATEGORY = "Umbuchung";
-
-export const CATEGORIES: Record<TxType, string[]> = {
-  out: ["Wohnen", "Lebensmittel", "Mobilität", "Freizeit", "Versicherung", "Gesundheit", "Sonstiges", TRANSFER_CATEGORY],
-  in: ["Gehalt", "Nebenverdienst", "Erstattung", "Sonstiges", TRANSFER_CATEGORY],
+export const CATEGORIES: Record<TxKind, string[]> = {
+  out: ["Wohnen", "Lebensmittel", "Mobilität", "Freizeit", "Versicherung", "Gesundheit", "Sonstiges"],
+  in: ["Gehalt", "Nebenverdienst", "Erstattung", "Sonstiges"],
+  transfer: ["Sparen", "Investieren", "Bargeld", "Sonstiges"],
 };
 
-/** Kategorien von Ausgaben und Einnahmen zusammen, jede einmal */
-export const ALL_CATEGORIES = [...new Set([...CATEGORIES.out, ...CATEGORIES.in])];
+/** Kategorien aller Arten zusammen, jede einmal */
+export const ALL_CATEGORIES = [...new Set(Object.values(CATEGORIES).flat())];
 
 export const ACCOUNT_KINDS: [AccountKind, string][] = [
   ["giro", "Girokonto"],

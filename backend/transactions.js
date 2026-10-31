@@ -15,9 +15,10 @@ function isDate(value) {
 
 /**
  * Prüft die Felder einer Buchung und liefert sie für die Datenbank aufbereitet, sonst null.
- * Die Schlüssel sind Spaltennamen (accountId wird zu account_id). Beim Anlegen müssen type, amount,
- * category, date und accountId vorhanden sein. Mit partial (Ändern) werden nur die übergebenen
- * Felder geprüft und zurückgegeben.
+ * Die Schlüssel sind Spaltennamen (accountId wird zu account_id, transfer zu transfer_override). Beim
+ * Anlegen müssen type, amount, category, date und accountId vorhanden sein. Mit partial (Ändern) werden
+ * nur die übergebenen Felder geprüft und zurückgegeben. transfer ist immer optional: ohne Angabe wird
+ * automatisch erkannt, ob die Buchung eine Umbuchung ist.
  */
 function readTransaction(body, partial = false) {
   const given = (key) => !partial || body[key] !== undefined;
@@ -45,6 +46,10 @@ function readTransaction(body, partial = false) {
     if (!Number.isInteger(body.accountId) || body.accountId < 1) return null;
     values.account_id = body.accountId;
   }
+  if (body.transfer !== undefined) {
+    if (typeof body.transfer !== "boolean") return null;
+    values.transfer_override = body.transfer;
+  }
   return values;
 }
 
@@ -52,9 +57,9 @@ function readTransaction(body, partial = false) {
 const lockedFields = (changes) => BANK_FIELDS.filter((field) => field in changes);
 
 /**
- * Prüft eine Änderung mehrerer Buchungen, { ids, changes }. Erlaubt sind nur Kategorie und Notiz, weil alles
- * andere bei importierten Buchungen feststeht. Liefert die IDs ohne Doppelte und die Felder für die Datenbank,
- * sonst null.
+ * Prüft eine Änderung mehrerer Buchungen, { ids, changes }. Erlaubt sind nur Kategorie, Notiz und die Kennzeichnung
+ * als Umbuchung, weil alles andere bei importierten Buchungen feststeht. Liefert die IDs ohne Doppelte und die
+ * Felder für die Datenbank, sonst null.
  */
 function readBulkChange(body) {
   const { ids } = body;
@@ -109,7 +114,7 @@ function readSearchQuery(query) {
   if (Number.isNaN(account)) return { error: "Ungültiges Konto" };
   const { q = "", category = "", type = "" } = query;
   if (typeof q !== "string" || typeof category !== "string") return { error: "Ungültige Suche" };
-  if (!["", "in", "out"].includes(type)) return { error: "Ungültige Art" };
+  if (!["", "in", "out", "transfer"].includes(type)) return { error: "Ungültige Art" };
   return { patterns: searchPatterns(q), category: category || null, type: type || null, account };
 }
 

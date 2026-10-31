@@ -77,6 +77,12 @@ const SCHEMA = [
   `ALTER TABLE accounts
     ADD COLUMN IF NOT EXISTS bank_balance NUMERIC(12,2),
     ADD COLUMN IF NOT EXISTS bank_balance_date DATE`,
+  // Umbuchung von Hand festgelegt (ja oder nein), leer: automatisch erkennen, siehe TRANSFER in stats.js
+  "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_override BOOLEAN",
+  // Weitere IBANs eines Kontos, z. B. der Lastschrifteinzug: Sie erkennen Umbuchungen, ordnen aber keine Umsätze zu
+  "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS extra_ibans TEXT[] NOT NULL DEFAULT '{}'",
+  // Früher markierte die Kategorie „Umbuchung“ eine Buchung von Hand als Umbuchung
+  "UPDATE transactions SET transfer_override = true, category = 'Sonstiges' WHERE category = 'Umbuchung'",
 ];
 
 /**
@@ -178,7 +184,8 @@ app.get("/api/transactions/search", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `${SELECT} WHERE concat_ws(' ', t.counterparty, t.purpose, t.note) ILIKE ALL ($1::text[])
-         AND ($2::text IS NULL OR t.category = $2) AND ($3::text IS NULL OR t.type = $3)
+         AND ($2::text IS NULL OR t.category = $2)
+         AND ($3::text IS NULL OR CASE WHEN ${TRANSFER} THEN 'transfer' ELSE t.type END = $3)
          AND ($4::int IS NULL OR t.account_id = $4)
        ORDER BY t.date DESC, t.id DESC`, [patterns, category, type, account]);
     res.json(rows);
@@ -190,9 +197,9 @@ app.post("/api/transactions", async (req, res) => {
   if (!tx) return res.status(400).json({ error: "Ungültige Eingabe" });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO transactions (type, amount, category, date, note, account_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [tx.type, tx.amount, tx.category, tx.date, tx.note, tx.account_id]);
+      `INSERT INTO transactions (type, amount, category, date, note, account_id, transfer_override)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [tx.type, tx.amount, tx.category, tx.date, tx.note, tx.account_id, tx.transfer_override ?? null]);
     const r = await pool.query(`${SELECT} WHERE t.id = $1`, [rows[0].id]);
     res.status(201).json(r.rows[0]);
   } catch (e) {
@@ -201,7 +208,7 @@ app.post("/api/transactions", async (req, res) => {
   }
 });
 
-// Ändert Kategorie und Notiz mehrerer Buchungen in einem Schritt und meldet, wie viele es waren
+// Ändert Kategorie, Notiz und Umbuchung mehrerer Buchungen in einem Schritt und meldet, wie viele es waren
 app.patch("/api/transactions", async (req, res) => {
   const bulk = readBulkChange(req.body || {});
   if (!bulk) return res.status(400).json({ error: "Ungültige Eingabe" });
@@ -215,7 +222,7 @@ app.patch("/api/transactions", async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
-// Ändert nur die übergebenen Felder. Bei importierten Buchungen bleiben Art, Betrag, Datum und Konto wie beim Import.
+// Ändert nur die übergebenen Felder. Richtung, Betrag, Datum und Konto importierter Buchungen bleiben, wie sie sind.
 app.patch("/api/transactions/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
@@ -225,7 +232,7 @@ app.patch("/api/transactions/:id", async (req, res) => {
     const { rows } = await pool.query("SELECT import_id FROM transactions WHERE id = $1", [id]);
     if (!rows.length) return res.status(404).json({ error: "Buchung nicht gefunden" });
     if (rows[0].import_id !== null && lockedFields(changes).length)
-      return res.status(409).json({ error: "Bei importierten Buchungen lassen sich nur Kategorie und Notiz ändern." });
+      return res.status(409).json({ error: "Richtung, Betrag, Datum und Konto stehen durch den Import fest." });
     // Spaltennamen stammen aus readTransaction, nicht aus der Anfrage
     const fields = Object.keys(changes);
     await pool.query(
@@ -263,9 +270,10 @@ app.post("/api/accounts", async (req, res) => {
   if (error) return res.status(400).json({ error });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO accounts (name, kind, institution, iban, bank_balance, bank_balance_date)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [values.name, values.kind, values.institution, values.iban, values.bank_balance ?? null, values.bank_balance_date ?? null]);
+      `INSERT INTO accounts (name, kind, institution, iban, extra_ibans, bank_balance, bank_balance_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [values.name, values.kind, values.institution, values.iban, values.extra_ibans,
+        values.bank_balance ?? null, values.bank_balance_date ?? null]);
     res.status(201).json(await findAccount(rows[0].id));
   } catch (e) {
     if (e.code === UNIQUE_VIOLATION) return res.status(409).json({ error: "Es gibt schon ein Konto mit dieser IBAN." });

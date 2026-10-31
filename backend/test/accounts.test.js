@@ -27,10 +27,10 @@ const valid = () => ({ name: " Girokonto ", kind: "giro", institution: " BW-Bank
 
 test("Konto anlegen: Eingaben werden für die Datenbank aufbereitet", () => {
   assert.deepEqual(readAccount(valid()), {
-    values: { name: "Girokonto", kind: "giro", institution: "BW-Bank", iban: GIRO },
+    values: { name: "Girokonto", kind: "giro", institution: "BW-Bank", iban: GIRO, extra_ibans: [] },
   });
   assert.deepEqual(readAccount({ name: "Bargeld", kind: "cash" }), {
-    values: { name: "Bargeld", kind: "cash", institution: "", iban: null },
+    values: { name: "Bargeld", kind: "cash", institution: "", iban: null, extra_ibans: [] },
   });
   assert.equal(readAccount({ ...valid(), name: "x".repeat(80) }).values.name.length, 60);
 });
@@ -51,6 +51,21 @@ test("Konto anlegen: fehlende oder ungültige Angaben werden mit Grund abgelehnt
     assert.ok(result.error, name);
   }
   assert.match(readAccount({ ...valid(), iban: "DE89370400440532013001" }).error, /IBAN ist ungültig/);
+});
+
+test("Weitere IBANs: werden vereinheitlicht, Leeres und Doppeltes fällt weg", () => {
+  assert.deepEqual(readAccount({ extraIbans: [" de89 3704 0044 0532 0130 00", "", OTHER, GIRO] }, true), {
+    values: { extra_ibans: [GIRO, OTHER] },
+  });
+  assert.deepEqual(readAccount({ extraIbans: [] }, true), { values: { extra_ibans: [] } });
+  assert.deepEqual(readAccount({ extraIbans: null }, true), { values: { extra_ibans: [] } });
+  assert.deepEqual(readAccount({ name: "Tagesgeld" }, true), { values: { name: "Tagesgeld" } });
+});
+
+test("Weitere IBANs: ungültige Angaben werden mit Grund abgelehnt", () => {
+  assert.match(readAccount({ extraIbans: [GIRO, "DE89370400440532013001"] }, true).error, /DE89 3704 0044 0532 0130 01 ist ungültig/);
+  assert.ok(readAccount({ extraIbans: GIRO }, true).error, "keine Liste");
+  assert.ok(readAccount({ ...valid(), extraIbans: ["12345678"] }).error, "keine IBAN");
 });
 
 test("Konto ändern: nur übergebene Felder, eine leere IBAN entfernt sie", () => {
@@ -75,6 +90,7 @@ test("Kontostand laut Bank: Betrag und Datum werden zusammen gespeichert, auch n
     kind: "giro",
     institution: "BW-Bank",
     iban: GIRO,
+    extra_ibans: [],
     bank_balance: "50.00",
     bank_balance_date: "2026-10-01",
   });

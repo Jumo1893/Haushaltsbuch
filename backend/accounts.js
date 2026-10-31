@@ -39,7 +39,8 @@ function readBankBalance(amount, date) {
  * Prüft die Felder eines Kontos und liefert { values } für die Datenbank oder { error } mit dem Grund.
  * Beim Anlegen müssen name und kind vorhanden sein. Mit partial (Ändern) werden nur die übergebenen
  * Felder geprüft und zurückgegeben. Der Kontostand laut Bank (bankBalance, bankBalanceDate) ist
- * immer optional und wird zu den Spalten bank_balance und bank_balance_date.
+ * immer optional und wird zu den Spalten bank_balance und bank_balance_date. extraIbans wird zur
+ * Spalte extra_ibans.
  */
 function readAccount(body, partial = false) {
   const given = (key) => !partial || body[key] !== undefined;
@@ -57,6 +58,14 @@ function readAccount(body, partial = false) {
     const iban = normalizeIban(body.iban);
     if (iban && !isIban(iban)) return { error: "Die IBAN ist ungültig. Bitte auf Tippfehler prüfen." };
     values.iban = iban || null;
+  }
+  if (given("extraIbans")) {
+    const list = body.extraIbans ?? [];
+    if (!Array.isArray(list)) return { error: "Die weiteren IBANs sind ungültig." };
+    const ibans = [...new Set(list.map(normalizeIban).filter(Boolean))];
+    const wrong = ibans.find((iban) => !isIban(iban));
+    if (wrong) return { error: `Die IBAN ${formatIban(wrong)} ist ungültig. Bitte auf Tippfehler prüfen.` };
+    values.extra_ibans = ibans;
   }
   if (body.bankBalance !== undefined || body.bankBalanceDate !== undefined) {
     const bank = readBankBalance(body.bankBalance ?? null, body.bankBalanceDate ?? null);

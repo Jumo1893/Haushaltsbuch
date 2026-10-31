@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "../api";
 import { useData } from "../data";
 import { bookings, dateFormat, eur, parseDate } from "../format";
-import { CATEGORIES, type BulkChanges, type Transaction, type TxType } from "../types";
+import { CATEGORIES, kindOf, type BulkChanges, type Transaction, type TxKind } from "../types";
 
 /** Dieselbe Änderung für mehrere Buchungen */
 export interface BulkUpdate {
@@ -17,9 +17,10 @@ interface Props {
   onClose: () => void;
 }
 
-const TYPE_NAMES: Record<TxType, [string, string]> = {
+const KIND_NAMES: Record<TxKind, [string, string]> = {
   out: ["Ausgabe", "Ausgaben"],
   in: ["Einnahme", "Einnahmen"],
+  transfer: ["Umbuchung", "Umbuchungen"],
 };
 
 /** Kategorie und Notiz mehrerer Buchungen auf einmal ändern */
@@ -27,8 +28,10 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   const { accounts } = useData();
-  // Je Art eine Kategorie, weil Einnahmen und Ausgaben verschiedene haben; leer heißt nicht ändern
-  const [categories, setCategories] = useState<Record<TxType, string>>({ out: "", in: "" });
+  // Als Umbuchung markieren, die Markierung aufheben oder leer: nicht ändern
+  const [transfer, setTransfer] = useState<"" | "yes" | "no">("");
+  // Je Art eine Kategorie, weil Einnahmen, Ausgaben und Umbuchungen verschiedene haben; leer heißt nicht ändern
+  const [categories, setCategories] = useState<Record<TxKind, string>>({ out: "", in: "", transfer: "" });
   const [note, setNote] = useState("");
   const [removeNotes, setRemoveNotes] = useState(false);
   const [error, setError] = useState("");
@@ -41,14 +44,19 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
 
   const close = () => ref.current?.close();
 
-  const groups = (["out", "in"] as const)
-    .map((type) => ({ type, ids: items.filter((x) => x.type === type).map((x) => x.id) }))
+  /** Art der Buchung nach dem Speichern, sie bestimmt die Kategorien zur Wahl */
+  const kindAfter = (x: Transaction) => (transfer ? kindOf({ type: x.type, transfer: transfer === "yes" }) : kindOf(x));
+  const groups = (["out", "in", "transfer"] as const)
+    .map((kind) => ({ kind, ids: items.filter((x) => kindAfter(x) === kind).map((x) => x.id) }))
     .filter((group) => group.ids.length);
-  const noteChange: BulkChanges = removeNotes ? { note: "" } : note.trim() ? { note: note.trim() } : {};
+  const shared: BulkChanges = {
+    ...(transfer && { transfer: transfer === "yes" }),
+    ...(removeNotes ? { note: "" } : note.trim() && { note: note.trim() }),
+  };
   const updates = groups
-    .map(({ type, ids }) => ({
+    .map(({ kind, ids }) => ({
       ids,
-      changes: categories[type] ? { ...noteChange, category: categories[type] } : noteChange,
+      changes: categories[kind] ? { ...shared, category: categories[kind] } : shared,
     }))
     .filter((update) => Object.keys(update.changes).length);
   const changing = updates.reduce((sum, update) => sum + update.ids.length, 0);
@@ -79,20 +87,32 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
         </p>
       )}
       <form onSubmit={handleSubmit}>
-        {groups.map(({ type, ids }) => (
-          <div className="full" key={type}>
-            <label htmlFor={`${id}-${type}`}>
+        <div className="full">
+          <label htmlFor={`${id}-art`}>Art</label>
+          <select
+            id={`${id}-art`}
+            value={transfer}
+            onChange={(e) => setTransfer(e.target.value as typeof transfer)}
+          >
+            <option value="">Nicht ändern</option>
+            <option value="yes">Umbuchung</option>
+            <option value="no">Keine Umbuchung</option>
+          </select>
+        </div>
+        {groups.map(({ kind, ids }) => (
+          <div className="full" key={kind}>
+            <label htmlFor={`${id}-${kind}`}>
               {groups.length > 1
-                ? `Kategorie für ${ids.length} ${TYPE_NAMES[type][ids.length === 1 ? 0 : 1]}`
+                ? `Kategorie für ${ids.length} ${KIND_NAMES[kind][ids.length === 1 ? 0 : 1]}`
                 : "Kategorie"}
             </label>
             <select
-              id={`${id}-${type}`}
-              value={categories[type]}
-              onChange={(e) => setCategories({ ...categories, [type]: e.target.value })}
+              id={`${id}-${kind}`}
+              value={categories[kind]}
+              onChange={(e) => setCategories({ ...categories, [kind]: e.target.value })}
             >
               <option value="">Nicht ändern</option>
-              {CATEGORIES[type].map((c) => (
+              {CATEGORIES[kind].map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>

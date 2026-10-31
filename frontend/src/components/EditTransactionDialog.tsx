@@ -1,13 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api";
-import {
-  TRANSFER_CATEGORY,
-  type Account,
-  type NewAccount,
-  type NewTransaction,
-  type Transaction,
-  type TransactionChanges,
-} from "../types";
+import type { Account, NewAccount, NewTransaction, Transaction, TransactionChanges } from "../types";
 import TransactionForm from "./TransactionForm";
 
 interface Props {
@@ -74,15 +67,10 @@ export default function EditTransactionDialog({ tx, accounts, onCreateAccount, o
             )}
           </dl>
           <p className="hint">
-            Aus einem CSV-Import: Art, Betrag, Datum und Konto stehen durch den Import fest und lassen sich nicht ändern.
+            Aus einem CSV-Import: Richtung, Betrag, Datum und Konto stehen durch den Import fest. Ob es eine Umbuchung
+            ist, lässt sich ändern.
           </p>
         </>
-      )}
-      {tx.transfer && tx.category !== TRANSFER_CATEGORY && (
-        <p className="hint">
-          Umbuchung zwischen eigenen Konten, erkannt an der IBAN der Gegenpartei. Sie zählt weder als Einnahme noch als
-          Ausgabe.
-        </p>
       )}
       {error && (
         <p className="errbox" role="alert">

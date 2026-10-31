@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { ALL_CATEGORIES, NO_FILTERS, isFiltered, type Account, type TransactionFilters, type TxType } from "../types";
+import { ALL_CATEGORIES, NO_FILTERS, isFiltered, type Account, type TransactionFilters, type TxKind } from "../types";
 import Segmented from "./Segmented";
 
 /** So lange (ms) muss die Eingabe ruhen, bevor gesucht wird */
 const TYPING_PAUSE = 250;
 
-const TYPES: [TxType | "", string][] = [
+const TYPES: [TxKind | "", string][] = [
   ["", "Alle"],
   ["out", "Ausgaben"],
   ["in", "Einnahmen"],
+  ["transfer", "Umbuchungen"],
 ];
 
 interface Props {

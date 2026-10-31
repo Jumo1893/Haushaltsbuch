@@ -1,5 +1,5 @@
 import { dateFormat, dayFormat, eur, parseDate } from "../format";
-import { TRANSFER_CATEGORY, type Account, type Transaction } from "../types";
+import type { Account, Transaction } from "../types";
 
 interface Props {
   items: Transaction[];
@@ -77,8 +77,7 @@ export default function TransactionList({
               >
                 <span>
                   {x.category}
-                  {/* an der IBAN erkannte Umbuchung; mit der Kategorie Umbuchung steht es schon da */}
-                  {x.transfer && x.category !== TRANSFER_CATEGORY && <span className="badge">Umbuchung</span>}
+                  {x.transfer && <span className="badge">Umbuchung</span>}
                   <small>
                     {day}
                     {account && ` · ${account}`}

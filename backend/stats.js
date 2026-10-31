@@ -1,19 +1,33 @@
 // Auswertungen für Übersicht und Kontoseiten: Umbuchungen, Kontostände und Werte je Monat
 
-/** Kategorie, mit der sich eine Buchung von Hand als Umbuchung zwischen eigenen Konten kennzeichnen lässt */
-const TRANSFER_CATEGORY = "Umbuchung";
+/**
+ * Buchungsarten von Trade Republic für Geld von und zu Konten bei anderen Banken. Ältere Exporte nennen dafür
+ * keine IBAN, die Art ist dann der einzige Hinweis auf eine Umbuchung.
+ */
+const TRANSFER_BOOKING_TEXTS = [
+  "CUSTOMER_INPAYMENT",
+  "TRANSFER_INBOUND",
+  "TRANSFER_INSTANT_INBOUND",
+  "TRANSFER_INSTANT_OUTBOUND",
+];
 
 /** Betrag der Buchung t mit Vorzeichen: Einnahmen positiv, Ausgaben negativ */
 const SIGNED = "CASE WHEN t.type = 'in' THEN t.amount ELSE -t.amount END";
 
+/** IBAN der Gegenpartei der Buchung t ohne Leerraum, leer oder NULL ohne Angabe */
+const COUNTERPARTY_IBAN = "upper(regexp_replace(t.details->>'counterpartyIban', '\\s', '', 'g'))";
+
 /**
- * true, wenn die Buchung t eine Umbuchung zwischen eigenen Konten ist: Kategorie „Umbuchung“ oder die
- * IBAN der Gegenpartei gehört zu einem anderen eigenen Konto. Umbuchungen zählen in den Auswertungen
- * weder als Einnahme noch als Ausgabe.
+ * true, wenn die Buchung t eine Umbuchung zwischen eigenen Konten ist. Was von Hand festgelegt ist
+ * (transfer_override), gilt immer. Sonst wird bei jeder Abfrage neu erkannt, eine später eingetragene IBAN gilt
+ * also auch für alte Buchungen: Die IBAN der Gegenpartei gehört zu einem anderen eigenen Konto oder, wenn der
+ * Export keine IBAN nennt, die Buchungsart steht für Geld von und zu einer anderen Bank.
+ * Umbuchungen zählen in den Auswertungen weder als Einnahme noch als Ausgabe.
  */
-const TRANSFER = `(t.category = '${TRANSFER_CATEGORY}' OR EXISTS (
-  SELECT 1 FROM accounts own WHERE own.id <> t.account_id
-    AND own.iban = upper(regexp_replace(t.details->>'counterpartyIban', '\\s', '', 'g'))))`;
+const TRANSFER = `COALESCE(t.transfer_override, EXISTS (
+  SELECT 1 FROM accounts own WHERE own.id <> t.account_id AND ${COUNTERPARTY_IBAN} = ANY(own.extra_ibans || own.iban))
+  OR (COALESCE(${COUNTERPARTY_IBAN}, '') = ''
+    AND t.details->>'bookingText' IN (${TRANSFER_BOOKING_TEXTS.map((text) => `'${text}'`).join(",")})), false)`;
 
 /**
  * Kontostand des Kontos a vor seiner ersten Buchung. Ist ein Kontostand laut Bank an einem Tag
@@ -37,7 +51,7 @@ const PENDING_ROUND_UPS = `SELECT sum(1 - t.amount % 1) AS total FROM transactio
  * Konten mit Kontostand (alle Buchungen), vorgemerkten Round-Ups, Anzahl der Buchungen sowie erstem und
  * letztem Buchungstag
  */
-const ACCOUNTS = `SELECT a.id, a.name, a.kind, a.institution, a.iban,
+const ACCOUNTS = `SELECT a.id, a.name, a.kind, a.institution, a.iban, a.extra_ibans AS "extraIbans",
   a.bank_balance::float8 AS "bankBalance", to_char(a.bank_balance_date, 'YYYY-MM-DD') AS "bankBalanceDate",
   (${OPENING} + COALESCE(s.total, 0))::float8 AS balance, COALESCE(r.total, 0)::float8 AS "pendingRoundUps",
   s.count::int AS "transactionCount",
@@ -116,4 +130,4 @@ async function dailyBalances(db, from, until, accountId = null) {
   return rows;
 }
 
-module.exports = { TRANSFER_CATEGORY, SIGNED, TRANSFER, OPENING, ACCOUNTS, monthlyStats, dailyBalances };
+module.exports = { SIGNED, TRANSFER, OPENING, ACCOUNTS, monthlyStats, dailyBalances };

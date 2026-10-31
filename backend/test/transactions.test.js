@@ -80,6 +80,21 @@ test("Ändern: nur übergebene Felder werden geprüft und geliefert", () => {
   assert.equal(readTransaction({ date: "2026-13-01" }, true), null);
 });
 
+test("Umbuchung: von Hand festgelegt oder automatisch", () => {
+  assert.equal("transfer_override" in readTransaction(valid()), false, "ohne Angabe automatisch");
+  assert.equal(readTransaction({ ...valid(), transfer: true }).transfer_override, true);
+  assert.equal(readTransaction({ ...valid(), transfer: false }).transfer_override, false);
+  assert.deepEqual(readTransaction({ transfer: true }, true), { transfer_override: true });
+  assert.deepEqual(readTransaction({ transfer: false }, true), { transfer_override: false });
+  assert.equal(readTransaction({ transfer: "ja" }, true), null);
+  assert.equal(readTransaction({ transfer: null }, true), null);
+  assert.equal(readTransaction({ ...valid(), transfer: 1 }), null);
+});
+
+test("Umbuchung: ist bei importierten Buchungen nicht gesperrt", () => {
+  assert.deepEqual(lockedFields({ transfer_override: true }), []);
+});
+
 test("Ändern: unbekannte Felder werden ignoriert", () => {
   assert.deepEqual(readTransaction({ category: "Wohnen", id: 7, import_id: null, account_id: 5, counterparty: "X" }, true), {
     category: "Wohnen",
@@ -100,6 +115,11 @@ test("Sammeländerung: Kategorie und Notiz für mehrere Buchungen", () => {
   });
   assert.deepEqual(readBulkChange({ ids: [3], changes: { note: "" } }), { ids: [3], changes: { note: "" } });
   assert.deepEqual(readBulkChange({ ids: [4, 4, 5], changes: { category: "Wohnen" } }).ids, [4, 5]);
+  assert.deepEqual(readBulkChange({ ids: [6], changes: { transfer: true, category: "Sparen" } }), {
+    ids: [6],
+    changes: { category: "Sparen", transfer_override: true },
+  });
+  assert.deepEqual(readBulkChange({ ids: [7], changes: { transfer: false } }).changes, { transfer_override: false });
 });
 
 test("Sammeländerung: fehlende oder ungültige Eingaben", () => {
@@ -116,6 +136,7 @@ test("Sammeländerung: fehlende oder ungültige Eingaben", () => {
     "Änderungen leer": { ids: [1], changes: {} },
     "Änderungen nur mit unbekannten Feldern": { ids: [1], changes: { id: 7 } },
     "Kategorie leer": { ids: [1], changes: { category: " " } },
+    "Umbuchung kein Wahrheitswert": { ids: [1], changes: { transfer: "ja" } },
     "Betrag": { ids: [1], changes: { amount: 5 } },
     "Datum": { ids: [1], changes: { date: "2026-10-27" } },
     "Art": { ids: [1], changes: { type: "in" } },
@@ -139,6 +160,8 @@ test("Suche: alle Filter sind optional", () => {
     type: "out",
     account: 3,
   });
+  assert.equal(readSearchQuery({ type: "in" }).type, "in");
+  assert.equal(readSearchQuery({ type: "transfer" }).type, "transfer");
 });
 
 test("Suche: jedes Wort ist ein Muster, Platzhalter zählen als normale Zeichen", () => {
@@ -153,7 +176,7 @@ test("Suche: ungültige Parameter", () => {
   const cases = {
     "Text doppelt": { q: ["a", "b"] },
     "Kategorie doppelt": { category: ["a", "b"] },
-    "unbekannte Art": { type: "transfer" },
+    "unbekannte Art": { type: "umbuchung" },
     "Art doppelt": { type: ["in", "out"] },
     "Konto kein Zahl": { account: "abc" },
     "Konto 0": { account: "0" },

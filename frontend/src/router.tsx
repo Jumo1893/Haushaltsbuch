@@ -74,7 +74,7 @@ export function useFilterParams(): [TransactionFilters, (filters: TransactionFil
       text: query.get("suche") ?? "",
       account: Number(/^\d+$/.exec(query.get("konto") ?? "")?.[0]) || null,
       category: query.get("kategorie") ?? "",
-      type: type === "in" || type === "out" ? type : "",
+      type: type === "in" || type === "out" || type === "transfer" ? type : "",
     };
   }, [query]);
 

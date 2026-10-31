@@ -19,6 +19,7 @@ export default function AccountDialog({ account, onSave, onClose }: Props) {
   const [kind, setKind] = useState<AccountKind>(account?.kind ?? "giro");
   const [institution, setInstitution] = useState(account?.institution ?? "");
   const [iban, setIban] = useState(account?.iban ? formatIban(account.iban) : "");
+  const [extraIbans, setExtraIbans] = useState(account?.extraIbans.map(formatIban).join(", ") ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -34,7 +35,13 @@ export default function AccountDialog({ account, onSave, onClose }: Props) {
     e.stopPropagation(); // siehe unten: nicht an ein umgebendes Formular weitergeben
     setSaving(true);
     try {
-      await onSave({ name: name.trim(), kind, institution: institution.trim(), iban: iban.replace(/\s+/g, "") || null });
+      await onSave({
+        name: name.trim(),
+        kind,
+        institution: institution.trim(),
+        iban: iban.replace(/\s+/g, "") || null,
+        extraIbans: extraIbans.split(/[,;]/),
+      });
       close();
     } catch (err) {
       setError(err instanceof ApiError && err.body?.error ? err.body.error : "Speichern fehlgeschlagen.");
@@ -107,6 +114,22 @@ export default function AccountDialog({ account, onSave, onClose }: Props) {
           <small className="hint">
             Umsätze mit dieser IBAN ordnet der CSV-Import automatisch diesem Konto zu. Überweisungen anderer eigener
             Konten an diese IBAN gelten als Umbuchung.
+          </small>
+        </div>
+        <div className="full">
+          <label htmlFor={`${id}-extra-ibans`}>Weitere IBANs</label>
+          <input
+            id={`${id}-extra-ibans`}
+            maxLength={200}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="optional, mehrere mit Komma trennen"
+            value={extraIbans}
+            onChange={(e) => setExtraIbans(e.target.value)}
+          />
+          <small className="hint">
+            Für Geld, das nicht über die IBAN des Kontos läuft, z. B. eine Lastschrift, die ein Anbieter über ein
+            anderes Konto einzieht. Buchungen anderer eigener Konten mit diesen IBANs gelten als Umbuchung.
           </small>
         </div>
         <div className="full actions">
