@@ -95,6 +95,23 @@ test("Umbuchung: ist bei importierten Buchungen nicht gesperrt", () => {
   assert.deepEqual(lockedFields({ transfer_override: true }), []);
 });
 
+test("Rhythmus: optional, null heißt einmalig", () => {
+  assert.equal("rhythm" in readTransaction(valid()), false);
+  for (const rhythm of ["monthly", "quarterly", "semiannual", "yearly"]) {
+    assert.equal(readTransaction({ ...valid(), rhythm }).rhythm, rhythm);
+  }
+  assert.equal(readTransaction({ ...valid(), rhythm: null }).rhythm, null);
+  assert.deepEqual(readTransaction({ rhythm: "yearly" }, true), { rhythm: "yearly" });
+  assert.deepEqual(readTransaction({ rhythm: null }, true), { rhythm: null });
+  assert.equal(readTransaction({ rhythm: "weekly" }, true), null);
+  assert.equal(readTransaction({ rhythm: "" }, true), null);
+  assert.equal(readTransaction({ ...valid(), rhythm: 12 }), null);
+});
+
+test("Rhythmus: ist bei importierten Buchungen nicht gesperrt", () => {
+  assert.deepEqual(lockedFields({ rhythm: "monthly" }), []);
+});
+
 test("Ändern: unbekannte Felder werden ignoriert", () => {
   assert.deepEqual(readTransaction({ category: "Wohnen", id: 7, import_id: null, account_id: 5, counterparty: "X" }, true), {
     category: "Wohnen",
@@ -120,6 +137,8 @@ test("Sammeländerung: Kategorie und Notiz für mehrere Buchungen", () => {
     changes: { category: "Sparen", transfer_override: true },
   });
   assert.deepEqual(readBulkChange({ ids: [7], changes: { transfer: false } }).changes, { transfer_override: false });
+  assert.deepEqual(readBulkChange({ ids: [8], changes: { rhythm: "monthly" } }).changes, { rhythm: "monthly" });
+  assert.deepEqual(readBulkChange({ ids: [9], changes: { rhythm: null } }).changes, { rhythm: null });
 });
 
 test("Sammeländerung: fehlende oder ungültige Eingaben", () => {
@@ -137,6 +156,7 @@ test("Sammeländerung: fehlende oder ungültige Eingaben", () => {
     "Änderungen nur mit unbekannten Feldern": { ids: [1], changes: { id: 7 } },
     "Kategorie leer": { ids: [1], changes: { category: " " } },
     "Umbuchung kein Wahrheitswert": { ids: [1], changes: { transfer: "ja" } },
+    "unbekannter Rhythmus": { ids: [1], changes: { rhythm: "weekly" } },
     "Betrag": { ids: [1], changes: { amount: 5 } },
     "Datum": { ids: [1], changes: { date: "2026-10-27" } },
     "Art": { ids: [1], changes: { type: "in" } },
@@ -147,17 +167,19 @@ test("Sammeländerung: fehlende oder ungültige Eingaben", () => {
 });
 
 test("Suche: alle Filter sind optional", () => {
-  assert.deepEqual(readSearchQuery({}), { patterns: [], category: null, type: null, account: null });
-  assert.deepEqual(readSearchQuery({ q: "", category: "", type: "", account: "" }), {
+  assert.deepEqual(readSearchQuery({}), { patterns: [], category: null, type: null, rhythm: null, account: null });
+  assert.deepEqual(readSearchQuery({ q: "", category: "", type: "", rhythm: "", account: "" }), {
     patterns: [],
     category: null,
     type: null,
+    rhythm: null,
     account: null,
   });
-  assert.deepEqual(readSearchQuery({ q: "penny", category: "Sonstiges", type: "out", account: "3" }), {
+  assert.deepEqual(readSearchQuery({ q: "penny", category: "Sonstiges", type: "out", rhythm: "yearly", account: "3" }), {
     patterns: ["%penny%"],
     category: "Sonstiges",
     type: "out",
+    rhythm: "yearly",
     account: 3,
   });
   assert.equal(readSearchQuery({ type: "in" }).type, "in");
@@ -178,6 +200,8 @@ test("Suche: ungültige Parameter", () => {
     "Kategorie doppelt": { category: ["a", "b"] },
     "unbekannte Art": { type: "umbuchung" },
     "Art doppelt": { type: ["in", "out"] },
+    "unbekannter Rhythmus": { rhythm: "weekly" },
+    "Rhythmus doppelt": { rhythm: ["monthly", "yearly"] },
     "Konto kein Zahl": { account: "abc" },
     "Konto 0": { account: "0" },
   };

@@ -4,6 +4,9 @@ export type TxType = "in" | "out";
 /** Art einer Buchung in der Oberfläche: Einnahme, Ausgabe oder Umbuchung */
 export type TxKind = TxType | "transfer";
 
+/** Wie oft eine wiederkehrende Buchung anfällt */
+export type Rhythm = "monthly" | "quarterly" | "semiannual" | "yearly";
+
 export interface NewTransaction {
   type: TxType;
   amount: number;
@@ -12,13 +15,14 @@ export interface NewTransaction {
   note: string;
   accountId: number;
   transfer: boolean; // Umbuchung zwischen eigenen Konten: zählt weder als Einnahme noch als Ausgabe
+  rhythm: Rhythm | null; // null: einmalig
 }
 
 /** Geänderte Felder einer Buchung */
 export type TransactionChanges = Partial<NewTransaction>;
 
 /** Änderung mehrerer Buchungen auf einmal: die Felder, die sich auch bei importierten Buchungen ändern lassen */
-export type BulkChanges = Pick<TransactionChanges, "category" | "note" | "transfer">;
+export type BulkChanges = Pick<TransactionChanges, "category" | "note" | "transfer" | "rhythm">;
 
 /** Filter der Suche über alle Monate; leere Werte filtern nicht */
 export interface TransactionFilters {
@@ -26,12 +30,13 @@ export interface TransactionFilters {
   account: number | null;
   category: string;
   type: TxKind | "";
+  rhythm: Rhythm | "";
 }
 
-export const NO_FILTERS: TransactionFilters = { text: "", account: null, category: "", type: "" };
+export const NO_FILTERS: TransactionFilters = { text: "", account: null, category: "", type: "", rhythm: "" };
 
-export const isFiltered = ({ text, account, category, type }: TransactionFilters) =>
-  !!(text.trim() || account || category || type);
+export const isFiltered = ({ text, account, category, type, rhythm }: TransactionFilters) =>
+  !!(text.trim() || account || category || type || rhythm);
 
 export interface Transaction extends NewTransaction {
   id: number;
@@ -42,6 +47,15 @@ export interface Transaction extends NewTransaction {
 
 export const kindOf = ({ type, transfer }: Pick<NewTransaction, "type" | "transfer">): TxKind =>
   transfer ? "transfer" : type;
+
+export const RHYTHMS: [Rhythm, string][] = [
+  ["monthly", "Monatlich"],
+  ["quarterly", "Quartalsweise"],
+  ["semiannual", "Halbjährlich"],
+  ["yearly", "Jährlich"],
+];
+
+export const rhythmLabel = (rhythm: Rhythm) => RHYTHMS.find(([value]) => value === rhythm)?.[1] ?? rhythm;
 
 export type AccountKind = "giro" | "savings" | "depot" | "credit_card" | "cash" | "other";
 

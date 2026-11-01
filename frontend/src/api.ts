@@ -48,9 +48,9 @@ export const fetchLatest = (limit: number, account?: number) =>
   request<Transaction[]>(`transactions?limit=${limit}${accountQuery(account)}`);
 
 /** Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst */
-export const searchTransactions = ({ text, account, category, type }: TransactionFilters) =>
+export const searchTransactions = ({ text, account, category, type, rhythm }: TransactionFilters) =>
   request<Transaction[]>(
-    `transactions/search?${new URLSearchParams({ q: text, category, type })}${accountQuery(account ?? undefined)}`,
+    `transactions/search?${new URLSearchParams({ q: text, category, type, rhythm })}${accountQuery(account ?? undefined)}`,
   );
 
 /** Werte je Monat und Konto bis zum Monat until (YYYY-MM) */

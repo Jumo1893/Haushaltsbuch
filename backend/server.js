@@ -4,6 +4,7 @@ const { Pool } = require("pg");
 const { loadProfiles } = require("./import/profiles");
 const { createImportRouter } = require("./import/routes");
 const {
+  RHYTHMS,
   readTransaction,
   lockedFields,
   readBulkChange,
@@ -26,7 +27,7 @@ app.use(express.json());
 
 const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
   to_char(t.date, 'YYYY-MM-DD') AS date, t.note, t.counterparty, t.purpose, t.import_id AS "importId",
-  t.account_id AS "accountId", ${TRANSFER} AS transfer FROM transactions t`;
+  t.account_id AS "accountId", ${TRANSFER} AS transfer, t.rhythm FROM transactions t`;
 
 // Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen
 const CATEGORIES = `SELECT c.id, c.kind, c.name, c.name = '${FALLBACK_CATEGORY}' AS fixed,
@@ -104,6 +105,9 @@ const SCHEMA = [
     .flatMap(([kind, names]) => names.map((name) => `('${kind}', '${name}')`))
     .join(", ")}) AS d(kind, name)
    WHERE NOT EXISTS (SELECT 1 FROM categories)`,
+  // Rhythmus einer wiederkehrenden Buchung, leer: einmalig
+  `ALTER TABLE transactions
+    ADD COLUMN IF NOT EXISTS rhythm TEXT CHECK (rhythm IN (${RHYTHMS.map((r) => `'${r}'`).join(",")}))`,
 ];
 
 /**
@@ -200,7 +204,7 @@ app.get("/api/transactions", async (req, res) => {
 
 // Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst
 app.get("/api/transactions/search", async (req, res) => {
-  const { patterns, category, type, account, error } = readSearchQuery(req.query);
+  const { patterns, category, type, rhythm, account, error } = readSearchQuery(req.query);
   if (error) return res.status(400).json({ error });
   try {
     const { rows } = await pool.query(
@@ -208,7 +212,8 @@ app.get("/api/transactions/search", async (req, res) => {
          AND ($2::text IS NULL OR t.category = $2)
          AND ($3::text IS NULL OR ${KIND} = $3)
          AND ($4::int IS NULL OR t.account_id = $4)
-       ORDER BY t.date DESC, t.id DESC`, [patterns, category, type, account]);
+         AND ($5::text IS NULL OR t.rhythm = $5)
+       ORDER BY t.date DESC, t.id DESC`, [patterns, category, type, account, rhythm]);
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
@@ -218,9 +223,10 @@ app.post("/api/transactions", async (req, res) => {
   if (!tx) return res.status(400).json({ error: "Ungültige Eingabe" });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO transactions (type, amount, category, date, note, account_id, transfer_override)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [tx.type, tx.amount, tx.category, tx.date, tx.note, tx.account_id, tx.transfer_override ?? null]);
+      `INSERT INTO transactions (type, amount, category, date, note, account_id, transfer_override, rhythm)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [tx.type, tx.amount, tx.category, tx.date, tx.note, tx.account_id, tx.transfer_override ?? null,
+        tx.rhythm ?? null]);
     const r = await pool.query(`${SELECT} WHERE t.id = $1`, [rows[0].id]);
     res.status(201).json(r.rows[0]);
   } catch (e) {
@@ -229,7 +235,7 @@ app.post("/api/transactions", async (req, res) => {
   }
 });
 
-// Ändert Kategorie, Notiz und Umbuchung mehrerer Buchungen in einem Schritt und meldet, wie viele es waren
+// Ändert Kategorie, Notiz, Rhythmus und Umbuchung mehrerer Buchungen in einem Schritt und meldet, wie viele es waren
 app.patch("/api/transactions", async (req, res) => {
   const bulk = readBulkChange(req.body || {});
   if (!bulk) return res.status(400).json({ error: "Ungültige Eingabe" });

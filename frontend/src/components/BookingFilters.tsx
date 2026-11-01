@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useData } from "../data";
-import { NO_FILTERS, isFiltered, type Account, type TransactionFilters, type TxKind } from "../types";
+import { NO_FILTERS, RHYTHMS, isFiltered, type Account, type TransactionFilters, type TxKind } from "../types";
 import Segmented from "./Segmented";
 
 /** So lange (ms) muss die Eingabe ruhen, bevor gesucht wird */
@@ -70,6 +70,18 @@ export default function BookingFilters({ filters, accounts, onChange }: Props) {
         <option value="">Alle Kategorien</option>
         {[...new Set(Object.values(categoryNames).flat())].map((c) => (
           <option key={c}>{c}</option>
+        ))}
+      </select>
+      <select
+        aria-label="Rhythmus"
+        value={filters.rhythm}
+        onChange={(e) => onChange({ ...filters, rhythm: e.target.value as TransactionFilters["rhythm"] })}
+      >
+        <option value="">Alle Rhythmen</option>
+        {RHYTHMS.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
         ))}
       </select>
       <Segmented label="Art" options={TYPES} value={filters.type} onChange={(type) => onChange({ ...filters, type })} />

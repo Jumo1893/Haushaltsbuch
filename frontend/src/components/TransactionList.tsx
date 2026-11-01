@@ -1,5 +1,5 @@
 import { dateFormat, dayFormat, eur, parseDate } from "../format";
-import type { Account, Transaction } from "../types";
+import { rhythmLabel, type Account, type Transaction } from "../types";
 
 interface Props {
   items: Transaction[];
@@ -78,6 +78,7 @@ export default function TransactionList({
                 <span>
                   {x.category}
                   {x.transfer && <span className="badge">Umbuchung</span>}
+                  {x.rhythm && <span className="badge">{rhythmLabel(x.rhythm)}</span>}
                   <small>
                     {day}
                     {account && ` · ${account}`}

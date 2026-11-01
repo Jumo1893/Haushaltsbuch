@@ -15,10 +15,12 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
 ## Funktionen
 - Übersicht mit Gesamtsaldo, Kontoständen, Verlauf und Einnahmen und Ausgaben je Monat, dazu eine eigene Seite je
   Konto (siehe „Oberfläche“)
-- Buchungen (Ausgabe, Einnahme oder Umbuchung) mit Betrag, Datum, Konto, Kategorie und Notiz von jeder Seite aus
-  erfassen, bearbeiten und löschen. Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen
-  lassen sich Kategorie, Notiz und die Kennzeichnung als Umbuchung ändern; Richtung, Betrag, Datum und Konto stehen durch
-  den Import fest und bleiben, wie sie sind.
+- Buchungen (Ausgabe, Einnahme oder Umbuchung) mit Betrag, Datum, Konto, Kategorie, Rhythmus und Notiz von jeder Seite
+  aus erfassen, bearbeiten und löschen. Zum Bearbeiten auf eine Buchung in der Liste klicken. Bei importierten Buchungen
+  lassen sich Kategorie, Rhythmus, Notiz und die Kennzeichnung als Umbuchung ändern; Richtung, Betrag, Datum und Konto
+  stehen durch den Import fest und bleiben, wie sie sind.
+- Wiederkehrende Buchungen mit ihrem Rhythmus kennzeichnen: monatlich, quartalsweise, halbjährlich oder jährlich (siehe
+  „Rhythmus“)
 - Buchungen über alle Monate und Konten suchen und mehrere auf einmal bearbeiten, z. B. alle Einkäufe bei Penny auf
   die Kategorie „Lebensmittel“ setzen (siehe „Oberfläche“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
@@ -134,18 +136,18 @@ Verlauf des Kontos und darunter seine Buchungen je Monat. Hier lässt sich das K
 Bank abgleichen, ein Import für das Konto starten und ein Konto ohne Buchungen löschen.
 
 **Buchungen** (`/buchungen`): alle Buchungen eines Monats über alle Konten, mit Saldo und Ausgaben nach Kategorie.
-Darüber stehen Suche und Filter. Sobald ein Suchtext, ein Konto, eine Kategorie oder eine Art gewählt ist, zeigt die
-Seite statt des Monats alle passenden Buchungen aus allen Monaten, mit Saldo und Ausgaben nach Kategorie der Treffer.
-Gesucht wird in Gegenpartei, Verwendungszweck und Notiz, Groß- und Kleinschreibung zählen nicht, und bei mehreren
-Wörtern müssen alle vorkommen. Die Filter stehen in der Adresse (z. B. `/buchungen?suche=penny&art=out`).
+Darüber stehen Suche und Filter. Sobald ein Suchtext, ein Konto, eine Kategorie, ein Rhythmus oder eine Art gewählt ist,
+zeigt die Seite statt des Monats alle passenden Buchungen aus allen Monaten, mit Saldo und Ausgaben nach Kategorie der
+Treffer. Gesucht wird in Gegenpartei, Verwendungszweck und Notiz, Groß- und Kleinschreibung zählen nicht, und bei
+mehreren Wörtern müssen alle vorkommen. Die Filter stehen in der Adresse (z. B. `/buchungen?suche=penny&art=out`).
 
 **Mehrere Buchungen bearbeiten:** In den Listen der Seiten „Buchungen“ und „Konto“ lassen sich Buchungen über die
 Kästchen auswählen, mit „Alle auswählen“ alle gezeigten.
 - Die Auswahl bleibt beim Blättern und Suchen bestehen und lässt sich so über Monate und Konten zusammenstellen. Die
   Leiste unten nennt, wie viele ausgewählte Buchungen gerade nicht zu sehen sind, der Dialog listet alle auf.
-- „Bearbeiten“ ändert Kategorie und Notiz aller ausgewählten Buchungen, auch importierter, und kann sie als Umbuchung
-  kennzeichnen oder das aufheben. Was auf „Nicht ändern“ steht, bleibt, wie es ist. Enthält die Auswahl mehrere Arten,
-  lässt sich für jede eine Kategorie wählen, weil sie verschiedene Kategorien haben.
+- „Bearbeiten“ ändert Kategorie, Rhythmus und Notiz aller ausgewählten Buchungen, auch importierter, und kann sie als
+  Umbuchung kennzeichnen oder das aufheben. Was auf „Nicht ändern“ steht, bleibt, wie es ist. Enthält die Auswahl mehrere
+  Arten, lässt sich für jede eine Kategorie wählen, weil sie verschiedene Kategorien haben.
 - Eine neue Notiz ersetzt vorhandene Notizen, „Vorhandene Notizen entfernen“ leert sie.
 - Die Änderung lässt sich nicht rückgängig machen.
 
@@ -236,6 +238,17 @@ steht sie durch den Import fest.
 
 Die frühere Kategorie „Umbuchung“ gibt es nicht mehr. Beim ersten Start dieser Version werden Buchungen mit dieser
 Kategorie einmalig zu Umbuchungen mit der Kategorie „Sonstiges“.
+
+### Rhythmus
+Jede Buchung, gleich welcher Art, kann einen Rhythmus tragen: monatlich, quartalsweise, halbjährlich oder jährlich. Ohne
+Angabe gilt sie als einmalig. Das ist auch der Stand aller importierten Buchungen, der Import setzt keinen Rhythmus.
+
+Der Rhythmus lässt sich beim Erfassen und Bearbeiten wählen, auch bei importierten Buchungen. Um z. B. alle Mietzahlungen
+zu kennzeichnen, nach ihnen suchen, alle auswählen und unter „Bearbeiten“ den Rhythmus setzen. In den Listen steht er
+neben der Kategorie, und die Buchungen lassen sich danach filtern.
+
+Der Rhythmus ist nur eine Angabe an der einzelnen Buchung. Künftige Buchungen entstehen dadurch nicht, und auf Summen,
+Kontostände und Diagramme hat er keinen Einfluss.
 
 ## CSV-Import
 Auf der Seite „Import“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen. Kommt man über „Umsätze importieren“
@@ -431,6 +444,7 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | `import_hash` | `TEXT`         | Fingerabdruck für die Duplikaterkennung |
 | `account_id` | `INTEGER`       | Verweis auf `accounts.id`, Pflicht |
 | `transfer_override` | `BOOLEAN` | Umbuchung von Hand festgelegt (ja oder nein), leer: automatisch erkennen (siehe „Umbuchungen“) |
+| `rhythm`     | `TEXT`          | `monthly`, `quarterly`, `semiannual` oder `yearly`, leer: einmalig (siehe „Rhythmus“) |
 
 ### Tabelle `accounts`
 Ein Eintrag je Konto.
@@ -494,9 +508,9 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/health`                        | Statusprüfung, liefert `{ "ok": true }` |
 | `GET`    | `/api/transactions?month=YYYY-MM`    | Buchungen eines Monats, neueste zuerst. Mit `&account=ID` nur die eines Kontos |
 | `GET`    | `/api/transactions?limit=N`          | Die neuesten N Buchungen (1 bis 100), auch mit `&account=ID` |
-| `GET`    | `/api/transactions/search?q=TEXT&category=NAME&type=out&account=ID` | Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst. Alle Parameter sind optional. `q` sucht in Gegenpartei, Verwendungszweck und Notiz, bei mehreren Wörtern müssen alle vorkommen. `type` ist `out` oder `in` (jeweils ohne Umbuchungen) oder `transfer` |
+| `GET`    | `/api/transactions/search?q=TEXT&category=NAME&type=out&rhythm=monthly&account=ID` | Buchungen aus allen Monaten, die zu den Filtern passen, neueste zuerst. Alle Parameter sind optional. `q` sucht in Gegenpartei, Verwendungszweck und Notiz, bei mehreren Wörtern müssen alle vorkommen. `type` ist `out` oder `in` (jeweils ohne Umbuchungen) oder `transfer` |
 | `POST`   | `/api/transactions`                  | Buchung anlegen, liefert sie mit `201` zurück |
-| `PATCH`  | `/api/transactions`                  | Kategorie, Notiz und Umbuchung mehrerer Buchungen in einem Schritt ändern, liefert `{ "updated": 3 }` |
+| `PATCH`  | `/api/transactions`                  | Kategorie, Notiz, Rhythmus und Umbuchung mehrerer Buchungen in einem Schritt ändern, liefert `{ "updated": 3 }` |
 | `PATCH`  | `/api/transactions/:id`              | Buchung ändern, nur die übergebenen Felder; liefert die geänderte Buchung |
 | `DELETE` | `/api/transactions/:id`              | Buchung löschen, `204` |
 | `GET`    | `/api/stats/months?until=YYYY-MM`    | Werte je Konto und Monat, lückenlos vom ersten Monat mit Buchungen bis `until` (bzw. bis zur letzten Buchung). Mit `&account=ID` nur für ein Konto |
@@ -519,20 +533,21 @@ Body für `POST /api/transactions`:
 { "type": "out", "amount": 42.5, "category": "Lebensmittel", "date": "2026-10-27", "note": "Wocheneinkauf", "accountId": 1 }
 ```
 `type` ist die Richtung, auch bei einer Umbuchung. Optional legt `"transfer": true` oder `false` von Hand fest, ob die
-Buchung eine Umbuchung ist; ohne Angabe wird das automatisch erkannt.
+Buchung eine Umbuchung ist; ohne Angabe wird das automatisch erkannt. Ebenfalls optional ist `rhythm`: `monthly`,
+`quarterly`, `semiannual`, `yearly` oder `null` für einmalig.
 Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`, auch wenn es das Konto nicht gibt.
 Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`)
 sowie `transfer`: `true` bei einer Umbuchung zwischen eigenen Konten, von Hand festgelegt oder erkannt (siehe
 „Umbuchungen“).
 
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
-`{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category`, `note` und
-`transfer` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
+`{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category`, `note`,
+`rhythm` und `transfer` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
 
 Body für `PATCH /api/transactions`: die IDs und die Änderung, z. B.
 `{ "ids": [12, 57, 103], "changes": { "category": "Lebensmittel", "note": "Einkauf beim Supermarkt" } }`. In `changes`
-sind nur `category`, `note` und `transfer` erlaubt, sonst antwortet das Backend mit `400`. IDs, die es nicht (mehr)
-gibt, werden übergangen, `updated` nennt die Zahl der geänderten Buchungen.
+sind nur `category`, `note`, `rhythm` und `transfer` erlaubt, sonst antwortet das Backend mit `400`. IDs, die es nicht
+(mehr) gibt, werden übergangen, `updated` nennt die Zahl der geänderten Buchungen.
 
 Body für `POST /api/accounts` (`institution`, `iban` und `extraIbans` sind optional):
 ```json

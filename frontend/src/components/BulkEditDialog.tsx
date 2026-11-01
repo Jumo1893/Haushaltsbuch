@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "../api";
 import { useData } from "../data";
 import { bookings, dateFormat, eur, parseDate } from "../format";
-import { kindOf, type BulkChanges, type Transaction, type TxKind } from "../types";
+import { RHYTHMS, kindOf, type BulkChanges, type Rhythm, type Transaction, type TxKind } from "../types";
 import CategorySelect from "./CategorySelect";
 
 /** Dieselbe Änderung für mehrere Buchungen */
@@ -33,6 +33,8 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
   const [transfer, setTransfer] = useState<"" | "yes" | "no">("");
   // Je Art eine Kategorie, weil Einnahmen, Ausgaben und Umbuchungen verschiedene haben; leer heißt nicht ändern
   const [categories, setCategories] = useState<Record<TxKind, string>>({ out: "", in: "", transfer: "" });
+  // Ein Rhythmus, „einmalig“ oder leer: nicht ändern
+  const [rhythm, setRhythm] = useState<Rhythm | "once" | "">("");
   const [note, setNote] = useState("");
   const [removeNotes, setRemoveNotes] = useState(false);
   const [error, setError] = useState("");
@@ -52,6 +54,7 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
     .filter((group) => group.ids.length);
   const shared: BulkChanges = {
     ...(transfer && { transfer: transfer === "yes" }),
+    ...(rhythm && { rhythm: rhythm === "once" ? null : rhythm }),
     ...(removeNotes ? { note: "" } : note.trim() && { note: note.trim() }),
   };
   const updates = groups
@@ -116,6 +119,22 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
             />
           </div>
         ))}
+        <div className="full">
+          <label htmlFor={`${id}-rhythm`}>Rhythmus</label>
+          <select
+            id={`${id}-rhythm`}
+            value={rhythm}
+            onChange={(e) => setRhythm(e.target.value as typeof rhythm)}
+          >
+            <option value="">Nicht ändern</option>
+            <option value="once">Einmalig</option>
+            {RHYTHMS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="full">
           <label htmlFor={`${id}-note`}>Notiz</label>
           <input

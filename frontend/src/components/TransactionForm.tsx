@@ -2,10 +2,12 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { useData } from "../data";
 import { today } from "../format";
 import {
+  RHYTHMS,
   kindOf,
   type Account,
   type NewAccount,
   type NewTransaction,
+  type Rhythm,
   type TxKind,
   type TxType,
 } from "../types";
@@ -58,6 +60,7 @@ export default function TransactionForm({
   const [date, setDate] = useState(initial?.date ?? today);
   const [categoryName, setCategoryName] = useState(initial?.category ?? null);
   const [note, setNote] = useState(initial?.note ?? "");
+  const [rhythm, setRhythm] = useState<Rhythm | null>(initial?.rhythm ?? null);
   const [accountId, setAccountId] = useState(initial?.accountId ?? defaultAccountId);
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -79,10 +82,20 @@ export default function TransactionForm({
     e.preventDefault();
     const amt = parseFloat(amount);
     if (!(amt > 0) || account === null || !category) return;
-    const ok = await onSubmit({ type, transfer, amount: amt, category, date, note: note.trim(), accountId: account });
+    const ok = await onSubmit({
+      type,
+      transfer,
+      amount: amt,
+      category,
+      date,
+      note: note.trim(),
+      accountId: account,
+      rhythm,
+    });
     if (ok && !initial) {
       setAmount("");
       setNote("");
+      setRhythm(null);
       amountRef.current?.focus();
     }
   };
@@ -150,6 +163,22 @@ export default function TransactionForm({
       <div>
         <label htmlFor={`${id}-cat`}>Kategorie</label>
         <CategorySelect id={`${id}-cat`} kind={kind} value={category} onChange={setCategoryName} />
+      </div>
+      <div className="full">
+        <label htmlFor={`${id}-rhythm`}>Rhythmus</label>
+        <select
+          id={`${id}-rhythm`}
+          value={rhythm ?? ""}
+          onChange={(e) => setRhythm((e.target.value || null) as Rhythm | null)}
+        >
+          <option value="">Einmalig</option>
+          {RHYTHMS.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        {rhythm && <small className="hint">Nur eine Angabe, künftige Buchungen entstehen dadurch nicht.</small>}
       </div>
       <div className="full">
         <label htmlFor={`${id}-note`}>Notiz</label>

@@ -6,6 +6,9 @@ const MAX_CENTS = 999999999999;
 /** Felder, die bei importierten Buchungen aus dem Import stammen und nicht geändert werden */
 const BANK_FIELDS = ["type", "amount", "date", "account_id"];
 
+/** Mögliche Rhythmen einer wiederkehrenden Buchung; ohne Rhythmus ist sie einmalig */
+const RHYTHMS = ["monthly", "quarterly", "semiannual", "yearly"];
+
 /** true, wenn der Text ein gültiges Datum im Format YYYY-MM-DD ist (z. B. kein 30. Februar) */
 function isDate(value) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -18,7 +21,7 @@ function isDate(value) {
  * Die Schlüssel sind Spaltennamen (accountId wird zu account_id, transfer zu transfer_override). Beim
  * Anlegen müssen type, amount, category, date und accountId vorhanden sein. Mit partial (Ändern) werden
  * nur die übergebenen Felder geprüft und zurückgegeben. transfer ist immer optional: ohne Angabe wird
- * automatisch erkannt, ob die Buchung eine Umbuchung ist.
+ * automatisch erkannt, ob die Buchung eine Umbuchung ist. Auch rhythm ist immer optional, null heißt einmalig.
  */
 function readTransaction(body, partial = false) {
   const given = (key) => !partial || body[key] !== undefined;
@@ -50,6 +53,10 @@ function readTransaction(body, partial = false) {
     if (typeof body.transfer !== "boolean") return null;
     values.transfer_override = body.transfer;
   }
+  if (body.rhythm !== undefined) {
+    if (body.rhythm !== null && !RHYTHMS.includes(body.rhythm)) return null;
+    values.rhythm = body.rhythm;
+  }
   return values;
 }
 
@@ -57,9 +64,9 @@ function readTransaction(body, partial = false) {
 const lockedFields = (changes) => BANK_FIELDS.filter((field) => field in changes);
 
 /**
- * Prüft eine Änderung mehrerer Buchungen, { ids, changes }. Erlaubt sind nur Kategorie, Notiz und die Kennzeichnung
- * als Umbuchung, weil alles andere bei importierten Buchungen feststeht. Liefert die IDs ohne Doppelte und die
- * Felder für die Datenbank, sonst null.
+ * Prüft eine Änderung mehrerer Buchungen, { ids, changes }. Erlaubt sind nur Kategorie, Notiz, Rhythmus und die
+ * Kennzeichnung als Umbuchung, weil alles andere bei importierten Buchungen feststeht. Liefert die IDs ohne Doppelte
+ * und die Felder für die Datenbank, sonst null.
  */
 function readBulkChange(body) {
   const { ids } = body;
@@ -107,20 +114,28 @@ const searchPatterns = (text) =>
 
 /**
  * Prüft die Parameter der Suche über alle Monate, alle sind optional: q (Wörter, die vorkommen müssen),
- * category, type und account. Liefert { patterns, category, type, account } oder { error }.
+ * category, type, rhythm und account. Liefert { patterns, category, type, rhythm, account } oder { error }.
  */
 function readSearchQuery(query) {
   const account = accountParam(query.account);
   if (Number.isNaN(account)) return { error: "Ungültiges Konto" };
-  const { q = "", category = "", type = "" } = query;
+  const { q = "", category = "", type = "", rhythm = "" } = query;
   if (typeof q !== "string" || typeof category !== "string") return { error: "Ungültige Suche" };
   if (!["", "in", "out", "transfer"].includes(type)) return { error: "Ungültige Art" };
-  return { patterns: searchPatterns(q), category: category || null, type: type || null, account };
+  if (!["", ...RHYTHMS].includes(rhythm)) return { error: "Ungültiger Rhythmus" };
+  return {
+    patterns: searchPatterns(q),
+    category: category || null,
+    type: type || null,
+    rhythm: rhythm || null,
+    account,
+  };
 }
 
 module.exports = {
   BANK_FIELDS,
   MAX_CENTS,
+  RHYTHMS,
   isDate,
   isMonth,
   readTransaction,
