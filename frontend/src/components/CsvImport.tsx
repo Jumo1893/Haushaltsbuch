@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, fetchImportOptions, previewImport, runImport } from "../api";
-import { megabytes } from "../format";
+import { megabytes, movements } from "../format";
 import { Link } from "../router";
 import type { Account, ImportOptions, ImportPreview as Preview, ImportResult, NewAccount, ProfileMismatch } from "../types";
 import ImportPreview, { Stat } from "./ImportPreview";
@@ -143,11 +143,12 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
         <p className="ok">Import abgeschlossen.</p>
         <dl className="stats">
           <Stat label="Importiert" value={result.imported} />
+          {result.depot && <Stat label="Wertpapierbewegungen" value={result.depot.imported} />}
           <Stat label="Duplikate übersprungen" value={result.duplicatesSkipped} />
           {result.skipped > 0 && <Stat label="Nicht übernommen" value={result.skipped} />}
           <Stat label="Fehlerhaft" value={result.invalid} />
         </dl>
-        {result.accounts.length > 0 && (
+        {(result.accounts.length > 0 || result.depot) && (
           <ul className="rows">
             {result.accounts.map((a) => (
               <li key={a.id}>
@@ -158,9 +159,20 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
                 <span className="count">{bookings(a.imported)}</span>
               </li>
             ))}
+            {result.depot && (
+              <li>
+                <div>
+                  <Link to={`/konten/${result.depot.id}`}>{result.depot.name}</Link>
+                  {result.depot.created && <span className="badge">Neues Depot</span>}
+                </div>
+                <span className="count">{movements(result.depot.imported)}</span>
+              </li>
+            )}
           </ul>
         )}
-        <p className="hint">Die Umsätze stehen in der Kategorie „{result.category}“ im Monat ihres Buchungstags.</p>
+        {result.imported > 0 && (
+          <p className="hint">Die Umsätze stehen in der Kategorie „{result.category}“ im Monat ihres Buchungstags.</p>
+        )}
         {result.accounts.some((a) => a.created) && (
           <p className="hint">
             Auf der Seite eines neuen Kontos lassen sich Name und Art ändern und der Kontostand mit der Bank abgleichen.

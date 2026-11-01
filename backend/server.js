@@ -17,6 +17,7 @@ const {
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
 const { KINDS: CATEGORY_KINDS, FALLBACK_CATEGORY, DEFAULT_CATEGORIES, readCategory } = require("./categories");
 const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
+const { withDepots, withDepotMonths, withDepotDays, depotView } = require("./depot");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
 // als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
@@ -108,6 +109,30 @@ const SCHEMA = [
   // Rhythmus einer wiederkehrenden Buchung, leer: einmalig
   `ALTER TABLE transactions
     ADD COLUMN IF NOT EXISTS rhythm TEXT CHECK (rhythm IN (${RHYTHMS.map((r) => `'${r}'`).join(",")}))`,
+  // Geldkonto, von dem ein Depot sein Geld bekommt
+  "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS cash_account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL",
+  "ALTER TABLE imports ADD COLUMN IF NOT EXISTS depot_count INTEGER NOT NULL DEFAULT 0",
+  // Wertpapierbewegungen eines Depots; ihr Geld steht als Buchung im Geldkonto. Bestände ergeben sich aus ihnen, siehe depot.js
+  `CREATE TABLE IF NOT EXISTS depot_movements (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    import_id INTEGER REFERENCES imports(id),
+    import_hash TEXT NOT NULL,
+    date DATE NOT NULL,
+    occurred_at TIMESTAMPTZ,
+    section TEXT NOT NULL,
+    type TEXT NOT NULL,
+    isin TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    asset_class TEXT NOT NULL DEFAULT '',
+    shares NUMERIC(24,10),
+    price NUMERIC(24,10),
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    fee NUMERIC(12,2) NOT NULL DEFAULT 0,
+    tax NUMERIC(12,2) NOT NULL DEFAULT 0
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_movements_account ON depot_movements(account_id, date)",
+  "CREATE INDEX IF NOT EXISTS idx_movements_hash ON depot_movements(import_hash)",
 ];
 
 /**
@@ -283,12 +308,12 @@ app.delete("/api/transactions/:id", async (req, res) => {
 });
 
 /** Ein Konto wie in GET /api/accounts, mit Kontostand */
-const findAccount = async (id) => (await pool.query(`${ACCOUNTS} WHERE a.id = $1`, [id])).rows[0];
+const findAccount = async (id) => (await withDepots(pool, (await pool.query(`${ACCOUNTS} WHERE a.id = $1`, [id])).rows))[0];
 
 app.get("/api/accounts", async (_req, res) => {
   try {
     const { rows } = await pool.query(`${ACCOUNTS} ORDER BY lower(a.name), a.id`);
-    res.json(rows);
+    res.json(await withDepots(pool, rows));
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
@@ -329,7 +354,7 @@ app.patch("/api/accounts/:id", async (req, res) => {
   }
 });
 
-// Nur leere Konten lassen sich löschen
+// Nur Konten ohne Buchungen lassen sich löschen. Wertpapierbewegungen verschwinden mit dem Depot, ein Import stellt sie wieder her.
 app.delete("/api/accounts/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
@@ -340,6 +365,18 @@ app.delete("/api/accounts/:id", async (req, res) => {
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(409).json({ error: "Das Konto enthält noch Buchungen." });
     console.error(e); res.status(500).json({ error: "Serverfehler" });
   }
+});
+
+// Bestand, Verlauf bis zum Monat until und Bewegungen eines Depots
+app.get("/api/depots/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  if (!isMonth(req.query.until)) return res.status(400).json({ error: "until=YYYY-MM erforderlich" });
+  try {
+    const { rowCount } = await pool.query("SELECT 1 FROM accounts WHERE id = $1", [id]);
+    if (!rowCount) return res.status(404).json({ error: "Konto nicht gefunden" });
+    res.json(await depotView(pool, id, req.query.until));
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
 /** Eine Kategorie wie in GET /api/categories */
@@ -416,7 +453,8 @@ app.get("/api/stats/months", async (req, res) => {
   const account = accountParam(req.query.account);
   if (Number.isNaN(account)) return res.status(400).json({ error: "Ungültiges Konto" });
   try {
-    res.json(await monthlyStats(pool, req.query.until, account));
+    const rows = await monthlyStats(pool, req.query.until, account);
+    res.json(await withDepotMonths(pool, rows, req.query.until, account));
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
@@ -428,7 +466,8 @@ app.get("/api/stats/days", async (req, res) => {
   const account = accountParam(req.query.account);
   if (Number.isNaN(account)) return res.status(400).json({ error: "Ungültiges Konto" });
   try {
-    res.json(await dailyBalances(pool, req.query.from, req.query.until, account));
+    const rows = await dailyBalances(pool, req.query.from, req.query.until, account);
+    res.json(await withDepotDays(pool, rows, req.query.from, req.query.until, account));
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 

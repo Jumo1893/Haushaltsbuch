@@ -26,6 +26,24 @@ export const signed = (x: number, format: Intl.NumberFormat = eur) => {
   return `${value < 0 ? "−" : "+"}${format.format(Math.abs(value))}`;
 };
 
+const percentChange = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 1 });
+
+/** Anteil mit Vorzeichen, z. B. "+21,4 %" oder "−3 %" */
+export const signedPercent = (x: number) => `${x < 0 ? "−" : "+"}${percentChange.format(Math.abs(x))}`;
+
+/** Stückzahl, z. B. "0,147562" */
+export const shareCount = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 6 });
+
+const smallQuote = new Intl.NumberFormat("de-DE", {
+  style: "currency",
+  currency: "EUR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+});
+
+/** Kurs, unter 10 € mit bis zu vier Nachkommastellen, z. B. "0,8881 €" */
+export const quote = (x: number) => (Math.abs(x) < 10 ? smallQuote : eur).format(x);
+
 /** Datum (YYYY-MM-DD) als lokales Date-Objekt */
 export const parseDate = (date: string) => new Date(`${date}T00:00:00`);
 
@@ -44,6 +62,9 @@ export const formatIban = (iban: string) => iban.replace(/(.{4})(?=.)/g, "$1 ");
 
 /** z. B. "1 Buchung", "5 Buchungen" */
 export const bookings = (n: number) => `${n} ${n === 1 ? "Buchung" : "Buchungen"}`;
+
+/** z. B. "1 Bewegung", "5 Bewegungen" */
+export const movements = (n: number) => `${n} ${n === 1 ? "Bewegung" : "Bewegungen"}`;
 
 /** Dateigröße in MB, z. B. "5 MB" */
 export const megabytes = (bytes: number) =>

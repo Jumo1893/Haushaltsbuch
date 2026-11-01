@@ -24,6 +24,8 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
 - Buchungen über alle Monate und Konten suchen und mehrere auf einmal bearbeiten, z. B. alle Einkäufe bei Penny auf
   die Kategorie „Lebensmittel“ setzen (siehe „Oberfläche“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
+- Depot aus dem Trade-Republic-Export, getrennt vom Geldkonto: Bestände, Einstand, Gewinne, Erträge, Anlageklassen und
+  alle Bewegungen (siehe „Depot“)
 - Kontostand mit der Bank abgleichen; Umbuchungen zwischen eigenen Konten zählen nicht als Einnahme oder Ausgabe
 - Monatsansicht mit Blättern zwischen den Monaten, Saldo sowie Summe der Einnahmen und Ausgaben im Monat
 - Ausgaben nach Kategorie als Balkendiagramm
@@ -121,7 +123,8 @@ eigene Adresse und lässt sich als Lesezeichen speichern, der gewählte Monat st
 (z. B. `/buchungen?monat=2026-10`).
 
 **Übersicht** (`/`)
-- Gesamtsaldo aller Konten und seine Veränderung in den letzten zwölf Monaten
+- Gesamtsaldo aller Konten und seine Veränderung in den letzten zwölf Monaten, mit einem Depot aufgeteilt in Geldkonten
+  und Depots
 - Einnahmen, Ausgaben und Saldo des laufenden Monats, verglichen mit dem Durchschnitt der zwölf Monate davor
 - Je Konto eine Karte mit Kontostand, Verlauf der letzten zwölf Monate und dem Tag der letzten Buchung. Liegt sie mehr
   als 30 Tage zurück, nennt die Karte stattdessen ihr Alter, ein Hinweis, dass ein Import fällig sein könnte. Ein Klick
@@ -133,7 +136,13 @@ eigene Adresse und lässt sich als Lesezeichen speichern, der gewählte Monat st
 
 **Konto** (`/konten/ID`): Kontostand mit Stand des Abgleichs, Einnahmen, Ausgaben und Saldo des laufenden Monats,
 Verlauf des Kontos und darunter seine Buchungen je Monat. Hier lässt sich das Konto bearbeiten, der Kontostand mit der
-Bank abgleichen, ein Import für das Konto starten und ein Konto ohne Buchungen löschen.
+Bank abgleichen, ein Import für das Konto starten und ein Konto ohne Buchungen löschen. Hat das Konto ein Depot, führt
+„Zum Depot“ dorthin.
+
+**Depot** (`/konten/ID`): Ein Depot mit Wertpapieren hat statt der Kontoseite eine eigene Seite (siehe „Depot“): Depotwert,
+Einstand, Gewinne, Erträge, Steuern und Gebühren, die Anteile der Anlageklassen, der Verlauf von Depotwert und Einstand
+und die Positionen je Anlageklasse. Ein Klick auf eine Position zeigt ihre Bewegungen. Darunter stehen die geschlossenen
+Positionen und alle Bewegungen, nach Wertpapier filterbar.
 
 **Buchungen** (`/buchungen`): alle Buchungen eines Monats über alle Konten, mit Saldo und Ausgaben nach Kategorie.
 Darüber stehen Suche und Filter. Sobald ein Suchtext, ein Konto, eine Kategorie, ein Rhythmus oder eine Art gewählt ist,
@@ -228,6 +237,9 @@ Die App erkennt Umbuchungen automatisch und wählt die Art dann vor. Als Umbuchu
 - ohne IBAN im Export, deren Buchungsart bei Trade Republic für Geld von oder zu einer anderen Bank steht
   (`CUSTOMER_INPAYMENT`, `TRANSFER_INBOUND`, `TRANSFER_INSTANT_INBOUND`, `TRANSFER_INSTANT_OUTBOUND`). Ältere Exporte
   nennen dafür weder IBAN noch Gegenpartei. Steht eine IBAN im Export, entscheidet nur sie.
+- ohne IBAN im Export, deren Buchungsart bei Trade Republic für Geld von oder zum Depot steht (`BUY`, `SELL`,
+  `PRIVATE_MARKET_BUY`, `IPO_SUBSCRIPTION`, `REDEMPTION`, `EARLY_REDEMPTION`, siehe „Depot“). Gebühren und Steuern dieser
+  Buchungen stecken im Betrag der Umbuchung, sie stehen im Depot.
 
 Liegt die Erkennung daneben oder gibt es keine IBAN, z. B. bei Bargeld vom Automaten, lässt sich die Art beim Bearbeiten
 ändern, auch bei importierten Buchungen. Diese Wahl gilt dann dauerhaft, unabhängig von der Erkennung.
@@ -249,6 +261,55 @@ neben der Kategorie, und die Buchungen lassen sich danach filtern.
 
 Der Rhythmus ist nur eine Angabe an der einzelnen Buchung. Künftige Buchungen entstehen dadurch nicht, und auf Summen,
 Kontostände und Diagramme hat er keinen Einfluss.
+
+## Depot
+Der Export von Trade Republic mischt Geld und Wertpapiere in einer Datei. Die App trennt das in zwei Konten:
+
+- **Geldkonto:** Hier stehen alle Geldbewegungen als Buchungen, sein Kontostand ist das Guthaben. Käufe und Verkäufe sind
+  Umbuchungen zum Depot, also weder Ausgabe noch Einnahme. Dividenden, Zinsen, Saveback und die Vorabpauschale bleiben
+  Einnahmen und Ausgaben, denn dieses Geld kommt von außen oder geht nach außen.
+- **Depot:** Ein Konto der Art „Depot“ mit eigener Tabelle `depot_movements`, ohne Buchungen. Sein Kontostand ist der
+  Depotwert, so zählt er zum Gesamtsaldo. Bestände werden nicht gespeichert, sondern aus den Bewegungen berechnet.
+
+**Einrichten:** Den Export mit dem Profil „Trade Republic“ importieren und in der Vorschau das Geldkonto wählen. Der
+erste Import legt das Depot an (Name des Kontos mit dem Zusatz „Depot“) und verknüpft es mit dem Konto. Name und Bank
+lassen sich danach ändern. Wer vor dieser Version importiert hat, importiert denselben Export einfach noch einmal: Die
+Buchungen sind Duplikate und bleiben, wie sie sind, die Bewegungen kommen neu hinzu. Das ist nötig, weil früher Zeilen
+ohne Geldbewegung (z. B. Splits und Krypto-Eingänge) verworfen wurden. Die Umstellung der Käufe und Verkäufe auf
+Umbuchungen gilt dagegen sofort auch für alte Buchungen, von Hand gesetzte Arten haben weiter Vorrang.
+
+**Was wohin gehört:** Jede Zeile mit Wertpapier (Spalte `symbol`) wird eine Bewegung, die Spalte `category` sagt, ob sie den
+Bestand ändert. Unbekannte Buchungsarten mit Geld zählen als Ertrag.
+
+| Zeile im Export | Wirkung im Depot | Im Geldkonto |
+|-----------------|------------------|--------------|
+| `TRADING`: `BUY`, `SELL` | Stückzahl (im Export mit Vorzeichen) und Einstand, beim Verkauf der Gewinn | Umbuchung |
+| `DELIVERY`: `FREE_RECEIPT` | Gratis-Eingang, z. B. Staking oder Krypto-Übertrag: Einstand zum Kurs des Tages, gesondert ausgewiesen | keine Buchung |
+| `CORPORATE_ACTION`: `SPLIT`, `REVERSE_SPLIT` | Stückzahl ändert sich, Einstand bleibt, der letzte Kurs wird umgerechnet. Mit neuer ISIN (zwei Zeilen desselben Tages) zieht der Einstand zum neuen Wertpapier um | keine Buchung |
+| `CORPORATE_ACTION`: `REDEMPTION` und `CASH`: `EARLY_REDEMPTION` | Anleihe läuft aus: Stücke weg, das Geld kommt in der zweiten Zeile, die Differenz zum Einstand ist Gewinn oder Verlust | Umbuchung |
+| `PRIVATE_MARKET_BUY`, `IPO_SUBSCRIPTION` | Vorauszahlung: Das Geld ist „in Abwicklung“ und zählt zum Depotwert, bis die Anteile als `BUY` ohne Betrag kommen. Rückzahlungen bei der Zuteilung mindern es | Umbuchung |
+| `DIVIDEND`, `DISTRIBUTION`, `INTEREST_PAYMENT`, `BOND_ACCRUED_INTEREST` | Ertrag der Position; die Stückzahl der Zeile ist nur eine Angabe | Einnahme |
+| `EARNINGS`, `PRE_DETERMINED_TAX_BASE`, `SEC_ACCOUNT` | Steuer der Position, z. B. Vorabpauschale oder Erstattung | Ausgabe oder Einnahme |
+| `BENEFITS_SAVEBACK`, `STOCKPERK` | Steht in der Liste, ändert aber nichts: Der Kauf dazu ist eine eigene Zeile | Einnahme |
+
+Zeilen ohne Wertpapier (Karte, Überweisungen, Zinsen aufs Guthaben, `TAX_OPTIMIZATION`) bleiben reine Buchungen.
+
+**Rechnung:**
+- **Einstand:** gleitender Durchschnitt mit Kaufgebühren. Ein Verkauf nimmt den durchschnittlichen Einstand der verkauften
+  Stücke mit. Das ist nicht die FIFO-Rechnung der Steuer, die Gewinne können also von der Steuerabrechnung abweichen.
+- **Gewinne** stehen nach Gebühren und vor Steuern, Gebühren sind nur nachrichtlich genannt und nicht doppelt abgezogen.
+  „Gesamt nach Steuern“ ist offener Gewinn + realisierter Gewinn + Erträge − Steuern.
+- **Anleihen:** Stück und Kurs beziehen sich auf den Nennwert, der Kurs ist ein Anteil davon (0,98 = 98 %). Stückzinsen beim
+  Kauf gehören zum Einstand.
+
+**Bewertung:** Die App kennt nur die Kurse aus dem Export, also den letzten eigenen Kauf, Verkauf oder Eingang je
+Wertpapier. Der Depotwert ist deshalb eine Schätzung und weicht vom Wert bei Trade Republic ab, je länger der letzte Kurs
+zurückliegt. Jede Position nennt das Datum ihres Kurses, die Seite nennt die Zahl der Positionen mit Kursen über 30 Tage.
+Auch Verlauf und Gesamtsaldo in der Übersicht beruhen auf diesen Kursen, je Monat mit dem bis dahin letzten bekannten Kurs.
+Kurse von außen fragt die App nicht ab.
+
+**Löschen:** „Depot löschen“ entfernt das Depot mit seinen Bewegungen, die Buchungen im Geldkonto bleiben. Ein neuer Import
+stellt es wieder her.
 
 ## CSV-Import
 Auf der Seite „Import“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen. Kommt man über „Umsätze importieren“
@@ -272,7 +333,12 @@ Regeln:
   Konto (siehe „Konten“).
 - **Fehlerhafte Zeilen** (z. B. ungültiges Datum, unlesbarer Betrag, andere Währung als EUR) werden nicht
   übernommen, alle gültigen Zeilen schon.
-- **Zeilen ohne Geldbewegung** (Betrag leer oder 0,00, z. B. ein Aktiensplit) werden ausgelassen.
+- **Zeilen ohne Geldbewegung** (Betrag leer oder 0,00) werden ausgelassen, außer sie gehören ins Depot (z. B. ein
+  Aktiensplit). Die Vorschau nennt sie unter „Nur Depot“.
+- **Depot:** Bei Profilen mit Depot wird jede Zeile mit Wertpapier zusätzlich eine Bewegung im Depot des gewählten Kontos
+  (siehe „Depot“). Die Vorschau nennt, wie viele Bewegungen neu sind und in welches Depot sie gehen. Bewegungen gelten als
+  bereits importiert, wenn Tag, Art, Wertpapier, Stückzahl, Kurs, Betrag, Gebühr und Steuer übereinstimmen. Die
+  Transaktions-ID zählt hier nicht, so erkennt auch ein Export ohne diese Spalte dieselben Bewegungen wieder.
 - **Duplikate:** Ein Umsatz gilt als bereits importiert, wenn eigenes Konto, Buchungstag, Betrag, Gegenpartei
   (Name und IBAN) und Verwendungszweck mit einem früher importierten Umsatz übereinstimmen (Groß-/Kleinschreibung
   und Leerzeichen zählen nicht). Liefert das Format eine eindeutige Transaktions-ID (Trade Republic), zählt
@@ -292,7 +358,8 @@ Regeln:
 | Profil      | Datei in `backend/import-profiles/` | Beschreibung |
 |-------------|-------------------------------------|--------------|
 | CSV-CAMT V8 | `csv-camt-v8.json` | Export „CSV-CAMT V8“, z. B. aus dem Online-Banking der Sparkassen. Trennzeichen `;`, Datum `TT.MM.JJ` oder `TT.MM.JJJJ`, Dezimalkomma, Kodierung UTF-8 oder Windows-1252. Konto über die IBAN in `Auftragskonto` |
-| Trade Republic | `trade-republic.json` | Transaktionsexport aus der Trade-Republic-App (Spalten `datetime`, `date`, `account_type`, … `mcc_code`). Trennzeichen `,`, Datum `JJJJ-MM-TT`, Dezimalpunkt, UTF-8. Übernimmt alle Geldbewegungen: Kartenzahlungen, Überweisungen, Zinsen, Ausschüttungen, Steuern sowie Käufe und Verkäufe (inklusive Sparpläne). Betrag = `amount` + `fee` + `tax`, Duplikate über `transaction_id`. Enthält keine eigene IBAN, das Konto wird in der Vorschau gewählt |
+| Trade Republic | `trade-republic.json` | Transaktionsexport aus der Trade-Republic-App (Spalten `datetime`, `date`, `account_type`, … `mcc_code`). Trennzeichen `,`, Datum `JJJJ-MM-TT`, Dezimalpunkt, UTF-8. Übernimmt alle Geldbewegungen: Kartenzahlungen, Überweisungen, Zinsen, Ausschüttungen, Steuern sowie Käufe und Verkäufe (inklusive Sparpläne). Betrag = `amount` + `fee` + `tax`, Duplikate über `transaction_id`. Zeilen mit Wertpapier gehen zusätzlich ins Depot. Enthält keine eigene IBAN, das Konto wird in der Vorschau gewählt |
+| Trade Republic (nur Depot) | `trade-republic-depot.json` | Übernimmt nur die Zeilen mit Wertpapier ins Depot, keine Buchungen. Für gekürzte Exporte, in denen `transaction_id` und die Spalten der Gegenpartei fehlen, z. B. nach einem Umweg über Excel; das Datum darf dann auch `M/D/JJJJ` sein. Ohne Transaktions-ID ließen sich Geldbewegungen nicht sicher mit vorhandenen Buchungen abgleichen, deshalb lehnt das Profil „Trade Republic“ solche Dateien ab |
 
 Beispieldateien mit erfundenen Daten (inklusive fehlerhafter Zeilen) liegen unter `backend/test/fixtures/`.
 Sie sind für Tests gedacht: Importiert landen ihre Umsätze wie echte Buchungen in der Datenbank.
@@ -310,11 +377,13 @@ im Log (`podman compose logs backend`) nennt den Grund. Vorlage: `csv-camt-v8.js
 | `encoding`           | nein    | Zeichenkodierung oder Liste von Kodierungen, die der Reihe nach probiert werden (Standard `utf-8`). Ein UTF-8-BOM am Dateianfang hat Vorrang |
 | `delimiter`          | ja      | Trennzeichen, z. B. `;` |
 | `skipLines`          | nein    | Anzahl der Zeilen vor der Spaltenüberschrift, die übersprungen werden (Standard `0`) |
-| `dateFormats`        | ja      | Liste von Datumsformaten aus `DD`, `MM`, `YYYY` oder `YY` (gelesen als 20YY) und Trennzeichen, z. B. `DD.MM.YYYY` |
+| `dateFormats`        | ja      | Liste von Datumsformaten aus `DD`, `MM`, `YYYY` oder `YY` (gelesen als 20YY) und Trennzeichen, z. B. `DD.MM.YYYY`. `D` und `M` stehen für Tag und Monat ohne führende Null, z. B. `M/D/YYYY` |
 | `decimalSeparator`   | ja      | `,` oder `.` |
 | `thousandsSeparator` | nein    | `.`, `,`, `'`, Leerzeichen oder leer (Standard: keins) |
 | `columns`            | ja      | Zuordnung Feld der App → Spaltenname in der Datei, siehe unten. Statt eines Namens geht auch eine Liste, dann gilt die erste nicht leere Spalte (z. B. `["counterparty_name", "name"]`) |
 | `skipRows`           | nein    | Zeilen, die ausgelassen werden: `{ "column": "...", "equals": "...", "reason": "..." }` |
+| `depot`              | nein    | `true`: Zeilen mit Wertpapier werden zusätzlich Bewegungen im Depot (siehe „Depot“). Braucht die Felder `bookingText`, `section`, `isin`, `assetName`, `assetClass`, `shares` und `price` |
+| `bookings`           | nein    | `false`: keine Buchungen anlegen, nur Bewegungen im Depot (braucht `depot`) |
 
 Felder für `columns` (Pflicht sind `date` und `amount`):
 
@@ -336,6 +405,9 @@ Felder für `columns` (Pflicht sind `date` und `amount`):
 | `isin`, `assetClass` | Wertpapier und Anlageklasse, z. B. FUND | `details` |
 | `shares`, `price` | Stückzahl und Kurs (Zahlen, beliebig viele Nachkommastellen) | `details` |
 | `originalAmount`, `originalCurrency`, `fxRate` | Betrag in Fremdwährung, Währung und Wechselkurs | `details` |
+| `section` | Bereich der Zeile im Export, z. B. TRADING oder CASH | `depot_movements` |
+| `assetName` | Name des Wertpapiers | `depot_movements` |
+| `timestamp` | Zeitpunkt der Zeile, nur für die Reihenfolge innerhalb eines Tages; unlesbar gilt als leer | `depot_movements` |
 
 Beträge dürfen mehr als zwei Nachkommastellen haben, wenn diese 0 sind (z. B. `-99.000000`).
 Alle Spalten aus `columns` und `skipRows` müssen in der Kopfzeile der Datei stehen (Groß-/Kleinschreibung
@@ -366,8 +438,9 @@ Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neu
 
 ## Tests
 Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
-Bank), die Parameter von Buchungsliste und Suche und den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
-Duplikaterkennung, Zuordnung zu Konten) laufen mit dem Test-Runner von Node.js 20+ und brauchen keine Datenbank:
+Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
+Duplikaterkennung, Zuordnung zu Konten) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf) laufen mit dem
+Test-Runner von Node.js 20+ und brauchen keine Datenbank:
 ```
 cd backend
 npm test
@@ -383,6 +456,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── accounts.js           Konten: Prüfung der Eingaben, IBAN, Zuordnung beim Import
 │   ├── categories.js         Kategorien: Standardliste und Prüfung der Eingaben
 │   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
+│   ├── depot.js              Depot: Wertpapierbewegungen, Bestände, Einstand, Gewinne, Depotwert im Zeitverlauf
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -402,14 +476,16 @@ Die Testdateien enthalten nur erfundene Daten.
         ├── types.ts          Typen und Kontoarten
         ├── format.ts         Währungs- und Datumsformatierung
         ├── index.css         Styles inkl. Dark Mode und Diagrammfarben
-        ├── pages/            DashboardPage, AccountPage, BookingsPage, CategoriesPage, ImportPage
+        ├── pages/            DashboardPage, AccountPage, DepotPage, BookingsPage, CategoriesPage,
+        │                     ImportPage
         └── components/       MonthNav, BookingsView, BookingFilters, MonthKpis,
             │                 BalanceCard, CategoryBreakdown, TopPayees,
             │                 TransactionList, TransactionForm, NewTransactionDialog,
             │                 EditTransactionDialog, BulkEditDialog, AccountCard,
             │                 AccountDialog, AccountSelect, ReconcileDialog, Segmented,
             │                 CategorySelect, CategoryDialog, DeleteCategoryDialog,
-            │                 CsvImport, ImportPreview, ImportHistory
+            │                 CsvImport, ImportPreview, ImportHistory,
+            │                 AllocationBar, PositionList, ClosedPositions, MovementList
             └── charts/       LineChart, CashflowChart, Sparkline, ChartTable
                               (eigenes SVG, ohne Diagramm-Bibliothek)
 ```
@@ -460,6 +536,28 @@ Ein Eintrag je Konto.
 | `created_at`  | `TIMESTAMPTZ` | Zeitpunkt der Anlage |
 | `bank_balance` | `NUMERIC(12,2)` | Kontostand laut Bank am Ende des Tages `bank_balance_date`, optional (siehe „Kontostand abgleichen“) |
 | `bank_balance_date` | `DATE`   | Tag dieses Kontostands; gesetzt genau dann, wenn `bank_balance` gesetzt ist |
+| `cash_account_id` | `INTEGER`  | bei einem Depot: Verweis auf das Geldkonto, sonst leer |
+
+### Tabelle `depot_movements`
+Eine Zeile je Wertpapierbewegung eines Depots (siehe „Depot“). Beträge haben das Vorzeichen des Geldkontos: negativ geht
+Geld ins Depot.
+
+| Spalte        | Typ             | Hinweis |
+|---------------|-----------------|---------|
+| `id`          | `SERIAL`        | Primärschlüssel |
+| `account_id`  | `INTEGER`       | Verweis auf `accounts.id`, das Depot. Wird es gelöscht, gehen seine Bewegungen mit |
+| `import_id`   | `INTEGER`       | Verweis auf `imports.id` |
+| `import_hash` | `TEXT`          | Fingerabdruck aus dem Inhalt der Zeile für die Duplikaterkennung |
+| `date`        | `DATE`          | Tag der Bewegung |
+| `occurred_at` | `TIMESTAMPTZ`   | Zeitpunkt, nur für die Reihenfolge innerhalb eines Tages, optional |
+| `section`     | `TEXT`          | Bereich im Export, z. B. `TRADING`, `DELIVERY`, `CORPORATE_ACTION` oder `CASH` |
+| `type`        | `TEXT`          | Buchungsart im Export, z. B. `BUY` |
+| `isin`        | `TEXT`          | ISIN, bei Krypto das Kürzel |
+| `name`        | `TEXT`          | Name des Wertpapiers |
+| `asset_class` | `TEXT`          | Anlageklasse, z. B. `STOCK`, `FUND`, `BOND`, `CRYPTO` oder `PRIVATE_FUND` |
+| `shares`      | `NUMERIC(24,10)`| Stückzahl, optional; negativ bei Abgängen. Bei `CASH` nur eine Angabe |
+| `price`       | `NUMERIC(24,10)`| Kurs, optional |
+| `amount`, `fee`, `tax` | `NUMERIC(12,2)` | Betrag, Gebühr und Steuer mit Vorzeichen |
 
 ### Tabelle `categories`
 Ein Eintrag je Kategorie und Art. Buchungen speichern den Namen der Kategorie in `transactions.category`.
@@ -480,6 +578,7 @@ Ein Eintrag je Importvorgang.
 | `profile_name`   | `TEXT`        | Name des Profils zum Zeitpunkt des Imports |
 | `file_name`      | `TEXT`        | Name der hochgeladenen Datei (die Datei selbst wird nicht gespeichert) |
 | `imported_count` | `INTEGER`     | übernommene Datensätze |
+| `depot_count`    | `INTEGER`     | übernommene Wertpapierbewegungen |
 | `duplicate_count` | `INTEGER`    | übersprungene Duplikate |
 | `skipped_count`  | `INTEGER`     | ausgelassen, z. B. vorgemerkte Umsätze oder Zeilen ohne Geldbewegung |
 | `invalid_count`  | `INTEGER`     | fehlerhafte Zeilen |
@@ -518,7 +617,8 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/accounts`                      | Konten mit Kontostand, nach Name sortiert |
 | `POST`   | `/api/accounts`                      | Konto anlegen, liefert es mit `201` zurück |
 | `PATCH`  | `/api/accounts/:id`                  | Konto ändern, nur die übergebenen Felder; liefert das geänderte Konto |
-| `DELETE` | `/api/accounts/:id`                  | Konto löschen, `204`; enthält es noch Buchungen, `409` |
+| `DELETE` | `/api/accounts/:id`                  | Konto löschen, `204`; enthält es noch Buchungen, `409`. Die Wertpapierbewegungen eines Depots gehen mit |
+| `GET`    | `/api/depots/:id?until=YYYY-MM`      | Bestand und Bewegungen eines Depots, Verlauf bis zum Monat `until` |
 | `GET`    | `/api/categories`                    | Kategorien aller Arten, „Sonstiges“ jeweils zuletzt |
 | `POST`   | `/api/categories`                    | Kategorie anlegen, liefert sie mit `201` zurück |
 | `PATCH`  | `/api/categories/:id`                | Kategorie umbenennen, ihre Buchungen ändern sich mit; liefert die geänderte Kategorie |
@@ -562,8 +662,16 @@ Den Kontostand laut Bank setzen beide Felder zusammen, `null` für beide entfern
 { "bankBalance": 1234.56, "bankBalanceDate": "2026-10-29" }
 ```
 Konten enthalten zusätzlich `extraIbans`, `bankBalance` und `bankBalanceDate` (ohne Abgleich `null`), `balance` (Kontostand nach
-allen Buchungen), `pendingRoundUps` (bei Trade Republic für Round-Ups vorgemerkt, sonst 0), `transactionCount` sowie
-`firstDate` und `lastDate` (erster und letzter Buchungstag, ohne Buchungen `null`).
+allen Buchungen, bei einem Depot mit dem Wert der Wertpapiere), `pendingRoundUps` (bei Trade Republic für Round-Ups
+vorgemerkt, sonst 0), `transactionCount`, `movementCount` (Wertpapierbewegungen), `cashAccountId` (bei einem Depot das
+Geldkonto, sonst `null`) sowie `firstDate` und `lastDate` (erster und letzter Tag mit Buchung oder Bewegung, ohne beides
+`null`).
+
+`GET /api/depots/:id` liefert `totals` (`value`, `invested`, `pending`, `unrealized`, `realized`, `income`, `taxes`, `fees`,
+`received`, `result`), `positions` und `closed` (offene und geschlossene Positionen mit denselben Werten sowie `isin`,
+`name`, `assetClass`, `shares`, `price`, `priceDate` und `lastDate`), `allocation` (`assetClass`, `value`, `share`), `history`
+(`month`, `value`, `invested` am Monatsanfang) und `movements` (neueste zuerst). `price` und `priceDate` sind der letzte
+bekannte Kurs, siehe „Depot“. Ohne Bewegungen sind die Listen leer, unbekanntes Konto: `404`.
 
 Body für `POST /api/categories`: `{ "kind": "out", "name": "Haustier" }`, für `PATCH`: `{ "name": "Tiere" }`. Kategorien
 enthalten zusätzlich `id`, `transactionCount` (Buchungen dieser Art und Kategorie) und `fixed`: `true` bei „Sonstiges“,
@@ -572,10 +680,11 @@ das sich nicht ändern lässt (`409`). Name schon vergeben: ebenfalls `409`.
 `GET /api/stats/months` liefert je Konto und Monat z. B.
 `{ "month": "2026-10", "accountId": 1, "income": 2850, "expenses": 1935.59, "transfers": -300, "balance": 3456.78 }`:
 Einnahmen und Ausgaben ohne Umbuchungen, Umbuchungen mit Vorzeichen und den Kontostand am Monatsanfang. `until` ist der
-aktuelle Monat aus Sicht des Browsers.
+aktuelle Monat aus Sicht des Browsers. Bei einem Depot ist der Kontostand der Depotwert, das Geld von und zu seinem
+Geldkonto steht unter `transfers`. So heben sich Käufe in der Summe aller Konten auf.
 
 `GET /api/stats/days` liefert je Konto und Tag z. B. `{ "date": "2026-10-24", "accountId": 1, "balance": 3456.78 }`: den
-Kontostand am Tagesende, also nach allen Buchungen dieses Tages.
+Kontostand am Tagesende, also nach allen Buchungen dieses Tages, bei einem Depot den Depotwert.
 
 Für die Import-Endpunkte ist der Body die CSV-Datei selbst (`Content-Type: application/octet-stream`), der
 Dateiname steht URI-kodiert im Header `X-File-Name`. Passt die Datei nicht, antwortet das Backend mit `400`, `413`,
@@ -587,6 +696,12 @@ Die Vorschau nennt unter `accounts` je eigener IBAN das Konto und die Zahl der n
 `accountId` ist `null`, wenn der Import das Konto erst anlegt. Datensätze ohne IBAN stehen unter `"iban": null`, für
 sie braucht der Import `account`. Die Zusammenfassung des Imports nennt unter `accounts` die Konten mit der Zahl
 der importierten Umsätze und ob sie neu angelegt wurden.
+
+Die Wertpapierbewegungen stehen in der Vorschau unter `depot`, z. B. `{ "new": 905, "duplicate": 0, "positions": 37 }`, und
+Zeilen, die nur ins Depot gehen, in `counts.depot`. Enthält die Datei neue Bewegungen, braucht der Import `account`: das
+Geldkonto oder das Depot selbst. Die Zusammenfassung nennt unter `depot` das Depot, z. B.
+`{ "id": 4, "name": "Trade Republic Depot", "imported": 905, "created": true }`, ohne neue Bewegungen `null`. Bisherige
+Importe enthalten dazu `depotImported`.
 
 ## Fehlerbehebung
 - **`Cannot connect to Podman` oder ähnliche Verbindungsfehler:** Die Podman-Maschine läuft nicht.

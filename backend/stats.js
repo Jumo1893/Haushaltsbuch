@@ -1,14 +1,17 @@
 // Auswertungen für Übersicht und Kontoseiten: Umbuchungen, Kontostände und Werte je Monat
 
+const { TRADE_BOOKING_TEXTS } = require("./depot");
+
 /**
- * Buchungsarten von Trade Republic für Geld von und zu Konten bei anderen Banken. Ältere Exporte nennen dafür
- * keine IBAN, die Art ist dann der einzige Hinweis auf eine Umbuchung.
+ * Buchungsarten von Trade Republic für Geld von und zu Konten bei anderen Banken und zum Depot. Ältere Exporte nennen
+ * dafür keine IBAN, die Art ist dann der einzige Hinweis auf eine Umbuchung.
  */
 const TRANSFER_BOOKING_TEXTS = [
   "CUSTOMER_INPAYMENT",
   "TRANSFER_INBOUND",
   "TRANSFER_INSTANT_INBOUND",
   "TRANSFER_INSTANT_OUTBOUND",
+  ...TRADE_BOOKING_TEXTS,
 ];
 
 /** Betrag der Buchung t mit Vorzeichen: Einnahmen positiv, Ausgaben negativ */
@@ -21,7 +24,7 @@ const COUNTERPARTY_IBAN = "upper(regexp_replace(t.details->>'counterpartyIban', 
  * true, wenn die Buchung t eine Umbuchung zwischen eigenen Konten ist. Was von Hand festgelegt ist
  * (transfer_override), gilt immer. Sonst wird bei jeder Abfrage neu erkannt, eine später eingetragene IBAN gilt
  * also auch für alte Buchungen: Die IBAN der Gegenpartei gehört zu einem anderen eigenen Konto oder, wenn der
- * Export keine IBAN nennt, die Buchungsart steht für Geld von und zu einer anderen Bank.
+ * Export keine IBAN nennt, die Buchungsart steht für Geld von und zu einer anderen Bank oder dem Depot.
  * Umbuchungen zählen in den Auswertungen weder als Einnahme noch als Ausgabe.
  */
 const TRANSFER = `COALESCE(t.transfer_override, EXISTS (
@@ -55,6 +58,7 @@ const PENDING_ROUND_UPS = `SELECT sum(1 - t.amount % 1) AS total FROM transactio
  * letztem Buchungstag
  */
 const ACCOUNTS = `SELECT a.id, a.name, a.kind, a.institution, a.iban, a.extra_ibans AS "extraIbans",
+  a.cash_account_id AS "cashAccountId",
   a.bank_balance::float8 AS "bankBalance", to_char(a.bank_balance_date, 'YYYY-MM-DD') AS "bankBalanceDate",
   (${OPENING} + COALESCE(s.total, 0))::float8 AS balance, COALESCE(r.total, 0)::float8 AS "pendingRoundUps",
   s.count::int AS "transactionCount",

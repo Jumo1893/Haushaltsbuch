@@ -54,6 +54,47 @@ test("mehrere Datumsformate werden der Reihe nach versucht", () => {
   assert.equal(profile.parseDate("2026-10-28"), null);
 });
 
+test("Datumsformate ohne führende Null", () => {
+  const profile = compileProfile("testbank", { ...minimal(), dateFormats: ["YYYY-MM-DD", "M/D/YYYY"] });
+  assert.equal(profile.parseDate("6/4/2023"), "2023-06-04");
+  assert.equal(profile.parseDate("10/28/2026"), "2026-10-28");
+  assert.equal(profile.parseDate("2026-10-28"), "2026-10-28");
+  assert.equal(profile.parseDate("13/1/2023"), null);
+});
+
+test("Profil mit Depot: braucht die Felder der Wertpapiere, Buchungen bleiben der Standard", () => {
+  const columns = {
+    date: "Datum",
+    amount: "Betrag",
+    bookingText: "Art",
+    section: "Bereich",
+    isin: "ISIN",
+    assetName: "Name",
+    assetClass: "Klasse",
+    shares: "Stück",
+    price: "Kurs",
+  };
+  const profile = compileProfile("testbank", { ...minimal(), depot: true, columns });
+  assert.deepEqual([profile.depot, profile.bookings], [true, true]);
+  assert.equal(compileProfile("testbank", { ...minimal(), depot: true, bookings: false, columns }).bookings, false);
+  assert.throws(() => compileProfile("testbank", { ...minimal(), depot: true }), /braucht das Feld „bookingText“/);
+  assert.throws(() => compileProfile("testbank", { ...minimal(), bookings: false }), /braucht das Profil „depot“/);
+  assert.throws(() => compileProfile("testbank", { ...minimal(), depot: "ja" }), /true oder false/);
+});
+
+test("Ein Profil ohne Depot bleibt, wie es ist", () => {
+  const profile = compileProfile("testbank", minimal());
+  assert.deepEqual([profile.depot, profile.bookings], [false, true]);
+});
+
+test("Das Depot-Profil für gekürzte Exporte erwartet keine Spalten, die dort fehlen", () => {
+  const depot = loadProfiles(path.join(__dirname, "..", "import-profiles")).get("trade-republic-depot");
+  for (const column of ["transaction_id", "description", "counterparty_name", "counterparty_iban", "payment_reference", "mcc_code"]) {
+    assert.ok(!depot.expectedColumns.includes(column), column);
+  }
+  assert.deepEqual([depot.depot, depot.bookings], [true, false]);
+});
+
 test("Spalten aus skipRows gehören zu den erwarteten Spalten", () => {
   const profile = compileProfile("testbank", {
     ...minimal(),

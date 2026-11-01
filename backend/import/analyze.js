@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const { CsvError, parseCsv, dropLines } = require("./csv");
 const { decode, cleanText, neutralizeFormula } = require("./values");
 const { normalizeIban } = require("../accounts");
+const { readMovement } = require("../depot");
 
 const MAX_ROWS = 10000;
 const SAMPLE_SIZE = 10;
@@ -24,8 +25,10 @@ const quote = (s) => `„${s.length > 40 ? `${s.slice(0, 40)}…` : s}“`;
 /**
  * Liest die Datei und liefert je Datenzeile ein Ergebnis:
  * - { line, status: "new", record }     gültiger Umsatz (Duplikate markiert erst markDuplicates)
+ * - { line, status: "depot", movement } nur Wertpapierbewegung, keine Buchung
  * - { line, status: "invalid", reason } fehlerhafte Zeile
  * - { line, status: "skipped", reason } ausgelassen: Regel des Profils oder keine Geldbewegung
+ * Bei Profilen mit „depot“ trägt auch ein Umsatz mit Wertpapier eine Bewegung (movement).
  * Passt die ganze Datei nicht (Kodierung, Aufbau, Spalten), wird ein ImportError geworfen.
  */
 function analyzeFile(buffer, profile, { maxRows = MAX_ROWS } = {}) {
@@ -123,16 +126,25 @@ function readRow({ line, fields }, profile, index, width) {
       else set(f, number);
     } else if (f.type === "currency") {
       if (value.toUpperCase() !== "EUR") errors.push(`Währung ${quote(value)} wird nicht unterstützt, nur EUR`);
+    } else if (f.type === "timestamp") {
+      // Nur für die Reihenfolge innerhalb eines Tages, ein unlesbarer Zeitpunkt ist deshalb kein Fehler
+      const time = new Date(value);
+      if (!Number.isNaN(time.getTime())) set(f, time.toISOString());
     } else {
       set(f, neutralizeFormula(value));
     }
   }
 
   if (errors.length) return invalid(errors.join("; "));
-  if (record.cents === 0) return { line, status: "skipped", reason: "Keine Geldbewegung (Betrag leer oder 0,00)" };
   if (Math.abs(record.cents) >= 1e12) return invalid("Der Betrag ist zu groß");
-  record.hash = fingerprint(record);
-  return { line, status: "new", record };
+  const movement = profile.depot ? readMovement(record) : null;
+  if (profile.bookings && record.cents !== 0) {
+    record.hash = fingerprint(record);
+    return { line, status: "new", record, ...(movement && { movement }) };
+  }
+  if (movement) return { line, status: "depot", movement };
+  const reason = profile.bookings ? "Keine Geldbewegung (Betrag leer oder 0,00)" : "Kein Wertpapier";
+  return { line, status: "skipped", reason };
 }
 
 /**
@@ -165,6 +177,21 @@ function markDuplicates(rows, existing) {
   return rows;
 }
 
+/**
+ * Setzt bei Wertpapierbewegungen duplicate, nach denselben Regeln wie markDuplicates.
+ * `existing`: Fingerabdruck → Anzahl der bereits gespeicherten Bewegungen.
+ */
+function markDuplicateMovements(rows, existing) {
+  const seen = new Map();
+  for (const { movement } of rows) {
+    if (!movement) continue;
+    const n = seen.get(movement.hash) ?? 0;
+    seen.set(movement.hash, n + 1);
+    movement.duplicate = n < (existing.get(movement.hash) ?? 0);
+  }
+  return rows;
+}
+
 /** IBAN des eigenen Kontos aus der Datei (Feld account), normalisiert; "" wenn sie fehlt */
 const ownIban = (record) => normalizeIban(record.details.account);
 
@@ -185,9 +212,16 @@ function groupByIban(rows) {
 }
 
 function countStatuses(rows) {
-  const counts = { total: rows.length, new: 0, duplicate: 0, skipped: 0, invalid: 0 };
+  const counts = { total: rows.length, new: 0, duplicate: 0, depot: 0, skipped: 0, invalid: 0 };
   for (const row of rows) counts[row.status]++;
   return counts;
+}
+
+/** Wertpapierbewegungen der Datei: neue, schon gespeicherte und die Zahl der Wertpapiere */
+function summarizeMovements(rows) {
+  const movements = rows.filter((r) => r.movement).map((r) => r.movement);
+  const duplicate = movements.filter((m) => m.duplicate).length;
+  return { new: movements.length - duplicate, duplicate, positions: new Set(movements.map((m) => m.isin)).size };
 }
 
 /** Vorschau für die Oberfläche: Anzahlen, die ersten Datensätze, Duplikate, Fehler. */
@@ -200,16 +234,39 @@ function buildPreview(rows) {
     purpose: record.purpose,
     duplicate: status === "duplicate",
   });
+  const movementView = ({ line, movement: m }) => ({
+    line,
+    date: m.date,
+    amount: (m.amount + m.fee + m.tax) / 100,
+    counterparty: m.name,
+    purpose: m.type,
+    duplicate: !!m.duplicate,
+  });
   const skipped = new Map();
   for (const row of rows) if (row.status === "skipped") skipped.set(row.reason, (skipped.get(row.reason) ?? 0) + 1);
+  const records = rows.filter((r) => r.record);
 
   return {
     counts: countStatuses(rows),
-    sample: rows.filter((r) => r.record).slice(0, SAMPLE_SIZE).map(view),
+    // Ein Profil nur fürs Depot hat keine Umsätze, die ersten Bewegungen stehen dann an ihrer Stelle
+    sample: records.length
+      ? records.slice(0, SAMPLE_SIZE).map(view)
+      : rows.filter((r) => r.movement).slice(0, SAMPLE_SIZE).map(movementView),
     duplicates: rows.filter((r) => r.status === "duplicate").slice(0, LIST_LIMIT).map(view),
     errors: rows.filter((r) => r.status === "invalid").slice(0, LIST_LIMIT).map(({ line, reason }) => ({ line, reason })),
     skipped: [...skipped].map(([reason, count]) => ({ reason, count })),
+    depot: summarizeMovements(rows),
   };
 }
 
-module.exports = { MAX_ROWS, ImportError, analyzeFile, markDuplicates, ownIban, groupByIban, countStatuses, buildPreview };
+module.exports = {
+  MAX_ROWS,
+  ImportError,
+  analyzeFile,
+  markDuplicates,
+  markDuplicateMovements,
+  ownIban,
+  groupByIban,
+  countStatuses,
+  buildPreview,
+};

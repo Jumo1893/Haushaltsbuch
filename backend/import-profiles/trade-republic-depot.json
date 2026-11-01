@@ -1,0 +1,25 @@
+{
+  "name": "Trade Republic (nur Depot)",
+  "description": "Übernimmt nur die Zeilen mit Wertpapier ins Depot und keine Geldbuchungen. Für gekürzte Exporte ohne transaction_id, auch mit Datum wie 6/14/2023. Schon vorhandene Bewegungen erkennt der Import am Inhalt.",
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "dateFormats": ["YYYY-MM-DD", "M/D/YYYY"],
+  "decimalSeparator": ".",
+  "depot": true,
+  "bookings": false,
+  "columns": {
+    "date": "date",
+    "timestamp": "datetime",
+    "amount": "amount",
+    "fee": "fee",
+    "tax": "tax",
+    "currency": "currency",
+    "bookingText": "type",
+    "section": "category",
+    "isin": "symbol",
+    "assetName": "name",
+    "assetClass": "asset_class",
+    "shares": "shares",
+    "price": "price"
+  }
+}

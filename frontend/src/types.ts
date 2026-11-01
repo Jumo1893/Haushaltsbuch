@@ -69,12 +69,14 @@ export interface NewAccount {
 
 export interface Account extends NewAccount {
   id: number;
+  cashAccountId: number | null; // bei einem Depot: das Geldkonto, von dem sein Geld kommt
   bankBalance: number | null; // Kontostand laut Bank am Tag bankBalanceDate, daraus ergeben sich die Kontostände
   bankBalanceDate: string | null; // YYYY-MM-DD
-  balance: number; // Kontostand nach allen Buchungen
+  balance: number; // Kontostand nach allen Buchungen, bei einem Depot mit dem Wert der Wertpapiere
   pendingRoundUps: number; // bei Trade Republic für Round-Ups vorgemerkt, noch nicht gebucht
   transactionCount: number;
-  firstDate: string | null; // erster und letzter Buchungstag, null ohne Buchungen
+  movementCount: number; // Wertpapierbewegungen, nur bei einem Depot
+  firstDate: string | null; // erster und letzter Tag mit Buchung oder Bewegung, null ohne beides
   lastDate: string | null;
 }
 
@@ -98,6 +100,76 @@ export interface DayBalance {
   balance: number; // Kontostand am Tagesende
 }
 
+/** Summen eines Depots. Gewinne sind vor Steuern und nach Gebühren. */
+export interface DepotTotals {
+  value: number; // Wert zum letzten bekannten Kurs, mit offenen Vorauszahlungen
+  invested: number; // Einstand der vorhandenen Stücke, mit offenen Vorauszahlungen
+  pending: number; // bezahlt, aber noch keine Anteile
+  unrealized: number; // Gewinn der vorhandenen Stücke
+  realized: number; // Gewinn aus Verkäufen und Rückzahlungen
+  income: number; // Dividenden, Ausschüttungen und Zinsen vor Steuern
+  taxes: number; // bezahlte Steuern, nach Erstattungen
+  fees: number; // Gebühren, stecken schon in Einstand und Gewinnen
+  received: number; // ohne Geldfluss eingebucht, zum Kurs des Tages
+  result: number; // beide Gewinne und Erträge, nach Steuern
+}
+
+/** Ein Wertpapier im Depot */
+export interface Position {
+  isin: string; // bei Krypto das Kürzel
+  name: string;
+  assetClass: string;
+  shares: number;
+  price: number | null; // letzter bekannter Kurs
+  priceDate: string | null; // YYYY-MM-DD
+  lastDate: string; // letzte Bewegung
+  invested: number;
+  pending: number;
+  value: number;
+  unrealized: number;
+  realized: number;
+  income: number;
+  taxes: number;
+  fees: number;
+  received: number;
+}
+
+export interface DepotAllocation {
+  assetClass: string;
+  value: number;
+  share: number; // Anteil am Depotwert, 0 bis 1
+}
+
+/** Stand des Depots an einem Monatsanfang */
+export interface DepotMonth {
+  month: string; // YYYY-MM
+  value: number;
+  invested: number;
+}
+
+export interface DepotMovement {
+  id: number;
+  date: string; // YYYY-MM-DD
+  type: string; // Buchungsart aus dem Export, z. B. BUY
+  kind: "buy" | "sell" | "split" | "prepayment" | "proceeds" | "reward" | "income";
+  isin: string;
+  name: string;
+  shares: number | null;
+  price: number | null;
+  amount: number; // aus Sicht des Geldkontos: negativ geht Geld ins Depot
+  fee: number;
+  tax: number;
+}
+
+export interface Depot {
+  totals: DepotTotals;
+  positions: Position[]; // nach Wert, größte zuerst
+  closed: Position[]; // nach letzter Bewegung, neueste zuerst
+  allocation: DepotAllocation[];
+  history: DepotMonth[];
+  movements: DepotMovement[]; // neueste zuerst
+}
+
 /** Ein bisheriger Import */
 export interface ImportRun {
   id: number;
@@ -105,6 +177,7 @@ export interface ImportRun {
   fileName: string;
   createdAt: string; // ISO-Zeitstempel
   imported: number;
+  depotImported: number; // Wertpapierbewegungen
   duplicatesSkipped: number;
   skipped: number;
   invalid: number;
@@ -143,12 +216,13 @@ export interface ImportAccount {
 export interface ImportPreview {
   profile: { id: string; name: string };
   fileName: string;
-  counts: { total: number; new: number; duplicate: number; skipped: number; invalid: number };
+  counts: { total: number; new: number; duplicate: number; depot: number; skipped: number; invalid: number };
   sample: ImportRow[];
   duplicates: ImportRow[];
   errors: { line: number; reason: string }[];
   skipped: { reason: string; count: number }[];
   accounts: ImportAccount[];
+  depot: { new: number; duplicate: number; positions: number }; // Wertpapierbewegungen der Datei
 }
 
 export interface ImportResult {
@@ -159,6 +233,7 @@ export interface ImportResult {
   invalid: number;
   category: string;
   accounts: { id: number; name: string; imported: number; created: boolean }[];
+  depot: { id: number; name: string; imported: number; created: boolean } | null;
 }
 
 /** Spalten, wenn die Datei nicht zum gewählten Importprofil passt */
@@ -190,3 +265,46 @@ export const ACCOUNT_KINDS: [AccountKind, string][] = [
 ];
 
 export const kindLabel = (kind: AccountKind) => ACCOUNT_KINDS.find(([value]) => value === kind)?.[1] ?? kind;
+
+/** Anlageklassen in fester Reihenfolge; ihre Stelle bestimmt die Farbe in Diagrammen (--c1 …) */
+export const ASSET_CLASSES: [string, string][] = [
+  ["STOCK", "Aktien"],
+  ["FUND", "Fonds und ETFs"],
+  ["PRIVATE_FUND", "Private Märkte"],
+  ["CRYPTO", "Krypto"],
+  ["BOND", "Anleihen"],
+];
+
+export const assetClassLabel = (assetClass: string) =>
+  ASSET_CLASSES.find(([value]) => value === assetClass)?.[1] ?? (assetClass || "Sonstige");
+
+/** Stelle der Anlageklasse in ASSET_CLASSES, unbekannte zuletzt */
+export const assetClassRank = (assetClass: string) => {
+  const rank = ASSET_CLASSES.findIndex(([value]) => value === assetClass);
+  return rank < 0 ? ASSET_CLASSES.length : rank;
+};
+
+const MOVEMENT_LABELS: Record<string, string> = {
+  BUY: "Kauf",
+  SELL: "Verkauf",
+  FREE_RECEIPT: "Gratis-Eingang",
+  SPLIT: "Aktiensplit",
+  REVERSE_SPLIT: "Zusammenlegung",
+  REDEMPTION: "Rückzahlung",
+  EARLY_REDEMPTION: "Vorzeitige Rückzahlung",
+  DIVIDEND: "Dividende",
+  DISTRIBUTION: "Ausschüttung",
+  EARNINGS: "Ertrag",
+  PRE_DETERMINED_TAX_BASE: "Vorabpauschale",
+  INTEREST_PAYMENT: "Zinsen",
+  BOND_ACCRUED_INTEREST: "Stückzinsen",
+  SEC_ACCOUNT: "Steuerkorrektur",
+  PRIVATE_MARKET_BUY: "Vorauszahlung",
+  IPO_SUBSCRIPTION: "Zeichnung",
+  BENEFITS_SAVEBACK: "Saveback",
+  STOCKPERK: "Aktien-Prämie",
+};
+
+/** Name einer Bewegung. EARNINGS ohne Betrag ist die Steuer auf die Vorabpauschale. */
+export const movementLabel = ({ type, amount }: Pick<DepotMovement, "type" | "amount">) =>
+  type === "EARNINGS" && !amount ? "Vorabpauschale" : (MOVEMENT_LABELS[type] ?? type);

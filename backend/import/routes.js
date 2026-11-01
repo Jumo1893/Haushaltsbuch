@@ -2,9 +2,19 @@
 // und weder auf der Platte noch in der Datenbank abgelegt.
 
 const express = require("express");
-const { ImportError, analyzeFile, markDuplicates, ownIban, groupByIban, countStatuses, buildPreview } = require("./analyze");
+const {
+  ImportError,
+  analyzeFile,
+  markDuplicates,
+  markDuplicateMovements,
+  ownIban,
+  groupByIban,
+  countStatuses,
+  buildPreview,
+} = require("./analyze");
 const { accountsForIbans } = require("../accounts");
 const { FALLBACK_CATEGORY } = require("../categories");
+const { depotOf } = require("../depot");
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Kategorie für importierte Umsätze, bis es eine Kategorisierung gibt */
@@ -43,6 +53,17 @@ async function countExisting(db, rows) {
   return new Map(found.map((f) => [f.import_hash, f.n]));
 }
 
+/** Wie oft jede Wertpapierbewegung schon in der Datenbank vorkommt */
+async function countExistingMovements(db, rows) {
+  const hashes = [...new Set(rows.filter((r) => r.movement).map((r) => r.movement.hash))];
+  if (!hashes.length) return new Map();
+  const { rows: found } = await db.query(
+    "SELECT import_hash, count(*)::int AS n FROM depot_movements WHERE import_hash = ANY($1) GROUP BY import_hash",
+    [hashes],
+  );
+  return new Map(found.map((f) => [f.import_hash, f.n]));
+}
+
 /** Konten je eigener IBAN für die Vorschau; accountId null: Das Konto wird beim Import angelegt bzw. gewählt. */
 async function previewAccounts(db, rows) {
   const groups = groupByIban(rows);
@@ -59,9 +80,16 @@ async function chosenAccount(db, value) {
   const id = Number(value);
   if (!Number.isInteger(id) || id < 1) throw new ImportError(400, "Ungültiges Konto.");
   // FOR KEY SHARE: Bis zum Ende des Imports lässt sich das Konto nicht löschen
-  const { rows } = await db.query("SELECT id, name FROM accounts WHERE id = $1 FOR KEY SHARE", [id]);
+  const { rows } = await db.query("SELECT id, name, kind, institution FROM accounts WHERE id = $1 FOR KEY SHARE", [id]);
   if (!rows.length) throw new ImportError(400, "Das gewählte Konto gibt es nicht.");
   return rows[0];
+}
+
+/** Depot für die Wertpapierbewegungen der Datei: das des gewählten Kontos, beim ersten Import wird es angelegt */
+async function assignDepot(db, accountParam) {
+  const chosen = await chosenAccount(db, accountParam);
+  if (!chosen) throw new ImportError(400, "Die Datei enthält Wertpapiere. Bitte ein Konto dafür wählen.");
+  return depotOf(db, chosen);
 }
 
 /**
@@ -111,6 +139,36 @@ async function insertTransactions(db, importId, records, accountIds) {
   );
 }
 
+async function insertMovements(db, importId, movements, accountId) {
+  const column = (fn) => movements.map(fn);
+  await db.query(
+    `INSERT INTO depot_movements (account_id, import_id, date, occurred_at, section, type, isin, name, asset_class,
+       shares, price, amount, fee, tax, import_hash)
+     SELECT $1, $2, t.date, t.occurred_at, t.section, t.type, t.isin, t.name, t.asset_class,
+       t.shares, t.price, t.amount / 100, t.fee / 100, t.tax / 100, t.hash
+     FROM unnest($3::date[], $4::timestamptz[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
+       $10::numeric[], $11::numeric[], $12::numeric[], $13::numeric[], $14::numeric[], $15::text[])
+       AS t(date, occurred_at, section, type, isin, name, asset_class, shares, price, amount, fee, tax, hash)`,
+    [
+      accountId,
+      importId,
+      column((m) => m.date),
+      column((m) => m.timestamp),
+      column((m) => m.section),
+      column((m) => m.type),
+      column((m) => m.isin),
+      column((m) => m.name),
+      column((m) => m.assetClass),
+      column((m) => m.shares),
+      column((m) => m.price),
+      column((m) => m.amount),
+      column((m) => m.fee),
+      column((m) => m.tax),
+      column((m) => m.hash),
+    ],
+  );
+}
+
 function handleError(err, _req, res, _next) {
   if (err instanceof ImportError) return res.status(err.status).json({ error: err.message, ...err.details });
   if (err.type === "entity.too.large") {
@@ -137,10 +195,11 @@ function createImportRouter(pool, profiles) {
   router.get("/imports", asyncRoute(async (_req, res) => {
     const { rows } = await pool.query(
       `SELECT i.id, i.profile_name AS "profileName", i.file_name AS "fileName", i.created_at AS "createdAt",
-         i.imported_count AS imported, i.duplicate_count AS "duplicatesSkipped", i.skipped_count AS skipped,
-         i.invalid_count AS invalid,
+         i.imported_count AS imported, i.depot_count AS "depotImported", i.duplicate_count AS "duplicatesSkipped",
+         i.skipped_count AS skipped, i.invalid_count AS invalid,
          COALESCE((SELECT json_agg(json_build_object('id', a.id, 'name', a.name) ORDER BY lower(a.name), a.id)
-           FROM accounts a WHERE a.id IN (SELECT t.account_id FROM transactions t WHERE t.import_id = i.id)), '[]') AS accounts
+           FROM accounts a WHERE a.id IN (SELECT t.account_id FROM transactions t WHERE t.import_id = i.id)
+             OR a.id IN (SELECT m.account_id FROM depot_movements m WHERE m.import_id = i.id)), '[]') AS accounts
        FROM imports i ORDER BY i.id DESC LIMIT $1`,
       [HISTORY_LIMIT],
     );
@@ -151,6 +210,7 @@ function createImportRouter(pool, profiles) {
   router.post("/imports/preview", fileBody, asyncRoute(async (req, res) => {
     const { profile, fileName, rows } = readUpload(req, profiles);
     markDuplicates(rows, await countExisting(pool, rows));
+    markDuplicateMovements(rows, await countExistingMovements(pool, rows));
     res.json({
       profile: { id: profile.id, name: profile.name },
       fileName,
@@ -159,7 +219,7 @@ function createImportRouter(pool, profiles) {
     });
   }));
 
-  // Import: liest die Datei erneut und speichert alle gültigen Umsätze in einer Transaktion.
+  // Import: liest die Datei erneut und speichert alle gültigen Umsätze und Wertpapierbewegungen in einer Transaktion.
   router.post("/imports", fileBody, asyncRoute(async (req, res) => {
     const { profile, fileName, rows } = readUpload(req, profiles);
     const includeDuplicates = req.query.duplicates === "include";
@@ -169,18 +229,24 @@ function createImportRouter(pool, profiles) {
       // Gleichzeitige Importe nacheinander ausführen, damit die Duplikatprüfung verlässlich ist
       await client.query("SELECT pg_advisory_xact_lock(hashtext('csv-import'))");
       markDuplicates(rows, await countExisting(client, rows));
+      markDuplicateMovements(rows, await countExistingMovements(client, rows));
       const counts = countStatuses(rows);
       const toSave = rows
         .filter((r) => r.status === "new" || (includeDuplicates && r.status === "duplicate"))
         .map((r) => r.record);
+      const movements = rows
+        .filter((r) => r.movement && (includeDuplicates || !r.movement.duplicate))
+        .map((r) => r.movement);
       const { ids, accounts } = await assignAccounts(client, toSave, req.query.account);
+      const depot = movements.length ? await assignDepot(client, req.query.account) : null;
       const duplicatesSkipped = includeDuplicates ? 0 : counts.duplicate;
       const { rows: [run] } = await client.query(
-        `INSERT INTO imports (profile_id, profile_name, file_name, imported_count, duplicate_count, skipped_count, invalid_count)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [profile.id, profile.name, fileName, toSave.length, duplicatesSkipped, counts.skipped, counts.invalid],
+        `INSERT INTO imports (profile_id, profile_name, file_name, imported_count, depot_count, duplicate_count, skipped_count, invalid_count)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [profile.id, profile.name, fileName, toSave.length, movements.length, duplicatesSkipped, counts.skipped, counts.invalid],
       );
       if (toSave.length) await insertTransactions(client, run.id, toSave, ids);
+      if (depot) await insertMovements(client, run.id, movements, depot.id);
       await client.query("COMMIT");
       res.status(201).json({
         importId: run.id,
@@ -190,6 +256,7 @@ function createImportRouter(pool, profiles) {
         invalid: counts.invalid,
         category: IMPORT_CATEGORY,
         accounts,
+        depot: depot && { id: depot.id, name: depot.name, imported: movements.length, created: depot.isNew },
       });
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});

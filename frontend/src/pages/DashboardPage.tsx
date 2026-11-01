@@ -53,6 +53,7 @@ export default function DashboardPage() {
   const course = balanceCourse(range, stats.data ?? [], days.data ?? [], day);
   const sparkMonths = totals.slice(-SPARK_MONTHS).map((t) => t.month);
   const total = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const depots = accounts.filter((a) => a.movementCount > 0).reduce((sum, a) => sum + a.balance, 0);
   const delta = change(totals, totals.findIndex((t) => t.month === current), total);
   const failed = stats.failed || days.failed || monthItems.failed || latest.failed;
 
@@ -108,6 +109,16 @@ export default function DashboardPage() {
             <span className="delta">
               {signed(delta.value)} {delta.since}
             </span>
+          )}
+          {depots !== 0 && (
+            <div className="split">
+              <div>
+                Geldkonten <b>{money(total - depots)}</b>
+              </div>
+              <div>
+                Depots <b>{money(depots)}</b>
+              </div>
+            </div>
           )}
         </div>
         <MonthKpis totals={stats.data ? totals : null} month={current} />
@@ -185,6 +196,9 @@ export default function DashboardPage() {
                     }))}
                   />
                 </>
+              )}
+              {depots !== 0 && (
+                <p className="hint">Depots zählen mit dem letzten Kurs aus dem Export, nicht mit aktuellen Börsenkursen.</p>
               )}
             </section>
             <section>

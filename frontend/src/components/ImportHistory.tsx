@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { fetchImports } from "../api";
 import { useLoad } from "../data";
-import { dateTimeFormat } from "../format";
+import { dateTimeFormat, movements } from "../format";
 import { Link } from "../router";
 
 /** Die bisherigen Importe, neueste zuerst, mit Links zu den Konten, in die sie Umsätze übernommen haben */
@@ -17,6 +17,7 @@ export default function ImportHistory() {
       {data.map((run) => {
         const counts = [
           `${run.imported} importiert`,
+          run.depotImported > 0 && `${movements(run.depotImported)} im Depot`,
           run.duplicatesSkipped > 0 && `${run.duplicatesSkipped} Duplikate übersprungen`,
           run.skipped > 0 && `${run.skipped} nicht übernommen`,
           run.invalid > 0 && `${run.invalid} fehlerhaft`,

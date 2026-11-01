@@ -36,11 +36,18 @@ const FIELDS = {
   originalAmount: { type: "number", detail: true },
   originalCurrency: { type: "text", detail: true },
   fxRate: { type: "number", detail: true },
+  // Nur für Wertpapierbewegungen (siehe depot.js)
+  section: { type: "text" },
+  assetName: { type: "text" },
+  timestamp: { type: "timestamp" },
 };
+
+/** Felder, die ein Profil mit „depot“ braucht */
+const DEPOT_FIELDS = ["bookingText", "section", "isin", "assetName", "assetClass", "shares", "price"];
 
 const KEYS = [
   "name", "description", "encoding", "delimiter", "skipLines", "dateFormats",
-  "decimalSeparator", "thousandsSeparator", "columns", "skipRows",
+  "decimalSeparator", "thousandsSeparator", "columns", "skipRows", "depot", "bookings",
 ];
 
 class ProfileError extends Error {}
@@ -75,7 +82,7 @@ function compileProfile(id, raw) {
 
   if (!Array.isArray(raw.dateFormats) || !raw.dateFormats.length) fail("„dateFormats“ braucht mindestens ein Format");
   const dateParsers = raw.dateFormats.map(
-    (f) => compileDateFormat(f) ?? fail(`ungültiges Datumsformat „${f}“ (erlaubt sind DD, MM, YY oder YYYY mit Trennzeichen)`),
+    (f) => compileDateFormat(f) ?? fail(`ungültiges Datumsformat „${f}“ (erlaubt sind DD, D, MM, M, YY oder YYYY mit Trennzeichen)`),
   );
 
   if (![",", "."].includes(decimalSeparator)) fail("„decimalSeparator“ muss „,“ oder „.“ sein");
@@ -94,6 +101,12 @@ function compileProfile(id, raw) {
   for (const [field, def] of Object.entries(FIELDS))
     if (def.required && !mapping[field]) fail(`Pflichtfeld „${field}“ fehlt in „columns“`);
 
+  // depot: Zeilen mit Wertpapier werden Bewegungen des Depots. bookings: false übernimmt nur diese, keine Buchungen.
+  const { depot = false, bookings = true } = raw;
+  if (typeof depot !== "boolean" || typeof bookings !== "boolean") fail("„depot“ und „bookings“ müssen true oder false sein");
+  if (!depot && !bookings) fail("Ohne Buchungen („bookings“: false) braucht das Profil „depot“");
+  if (depot) for (const field of DEPOT_FIELDS) if (!mapping[field]) fail(`„depot“ braucht das Feld „${field}“ in „columns“`);
+
   const skipRows = raw.skipRows ?? [];
   if (!Array.isArray(skipRows)) fail("„skipRows“ muss eine Liste sein");
   for (const rule of skipRows)
@@ -108,6 +121,8 @@ function compileProfile(id, raw) {
     delimiter,
     skipLines,
     fields,
+    depot,
+    bookings,
     skipRows: skipRows.map(({ column, equals, reason }) => ({ column, equals, reason })),
     /** Spalten, die in der Datei vorhanden sein müssen */
     expectedColumns: [...new Set([...fields.flatMap((f) => f.columns), ...skipRows.map((r) => r.column)])],

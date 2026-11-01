@@ -4,6 +4,7 @@ import type {
   BulkChanges,
   Category,
   DayBalance,
+  Depot,
   ImportOptions,
   ImportPreview,
   ImportResult,
@@ -104,6 +105,10 @@ export const updateAccount = (id: number, changes: AccountChanges) =>
   });
 
 export const deleteAccount = (id: number) => request<null>(`accounts/${id}`, { method: "DELETE" });
+
+/** Bestand, Verlauf bis zum Monat until (YYYY-MM) und Bewegungen eines Depots */
+export const fetchDepot = (id: number, until: string) =>
+  request<Depot>(`depots/${id}?until=${encodeURIComponent(until)}`);
 
 export const fetchCategories = () => request<Category[]>("categories");
 

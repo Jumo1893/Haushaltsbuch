@@ -24,7 +24,7 @@ const rejects = (fn, status, pattern) =>
 
 test("CSV-CAMT V8: Beispieldatei wird vollständig gelesen", () => {
   const rows = analyzeFile(fixture, camt);
-  assert.deepEqual(countStatuses(rows), { total: 11, new: 7, duplicate: 0, skipped: 1, invalid: 3 });
+  assert.deepEqual(countStatuses(rows), { total: 11, new: 7, duplicate: 0, depot: 0, skipped: 1, invalid: 3 });
 
   const lines = byLine(rows);
   assert.deepEqual(lines[2], { line: 2, status: "skipped", reason: "Vorgemerkter Umsatz (noch nicht gebucht)" });
@@ -159,7 +159,7 @@ test("Duplikate: bekannte Umsätze werden erkannt, neue nicht", () => {
   const known = byLine(rows)[3].record.hash;
   markDuplicates(rows, new Map([[known, 1]]));
   assert.equal(byLine(rows)[3].status, "duplicate");
-  assert.deepEqual(countStatuses(rows), { total: 11, new: 6, duplicate: 1, skipped: 1, invalid: 3 });
+  assert.deepEqual(countStatuses(rows), { total: 11, new: 6, duplicate: 1, depot: 0, skipped: 1, invalid: 3 });
 });
 
 test("Duplikate: gleiche Umsätze in einer Datei zählen nur so oft als Duplikat, wie sie gespeichert sind", () => {
@@ -191,7 +191,7 @@ test("Vorschau: Anzahlen, erste Datensätze, Duplikate, Fehler und gruppierte Au
   markDuplicates(rows, new Map([[byLine(rows)[3].record.hash, 1]]));
   const preview = buildPreview(rows);
 
-  assert.deepEqual(preview.counts, { total: 11, new: 6, duplicate: 1, skipped: 1, invalid: 3 });
+  assert.deepEqual(preview.counts, { total: 11, new: 6, duplicate: 1, depot: 0, skipped: 1, invalid: 3 });
   assert.equal(preview.sample.length, 7);
   assert.deepEqual(preview.sample[0], {
     line: 3,
@@ -250,9 +250,10 @@ const trFixture = fs.readFileSync(path.join(__dirname, "fixtures", "trade-republ
 
 test("Trade Republic: Beispieldatei wird vollständig gelesen", () => {
   const rows = analyzeFile(trFixture, tr);
-  assert.deepEqual(countStatuses(rows), { total: 14, new: 11, duplicate: 0, skipped: 1, invalid: 2 });
+  assert.deepEqual(countStatuses(rows), { total: 14, new: 11, duplicate: 0, depot: 1, skipped: 0, invalid: 2 });
   const lines = byLine(rows);
-  assert.deepEqual(lines[11], { line: 11, status: "skipped", reason: "Keine Geldbewegung (Betrag leer oder 0,00)" });
+  assert.equal(lines[11].status, "depot", "Der Split bewegt kein Geld, gehört aber ins Depot");
+  assert.equal(lines[11].movement.type, "SPLIT");
   assert.equal(lines[13].reason, "Unlesbarer Betrag „-1.234567“ in Spalte „amount“");
   assert.equal(lines[14].reason, "Ungültiges Datum „2026-02-30“ in Spalte „date“");
   assert.deepEqual(groupByIban(rows), [{ iban: null, new: 11, duplicate: 0 }], "ohne eigene IBAN, Konto wird gewählt");

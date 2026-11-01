@@ -19,18 +19,25 @@ function decode(buffer, encodings) {
   return null;
 }
 
-const DATE_TOKENS = { YYYY: "(\\d{4})", YY: "(\\d{2})", MM: "(\\d{2})", DD: "(\\d{2})" };
+const DATE_TOKENS = {
+  YYYY: "(\\d{4})",
+  YY: "(\\d{2})",
+  MM: "(\\d{2})",
+  DD: "(\\d{2})",
+  M: "(\\d{1,2})",
+  D: "(\\d{1,2})",
+};
 
 /**
  * Erzeugt aus einem Datumsformat wie "DD.MM.YYYY" eine Funktion, die ein ISO-Datum
- * (YYYY-MM-DD) oder null liefert. Zweistellige Jahre (YY) werden als 20YY gelesen.
- * Liefert null, wenn das Format ungültig ist.
+ * (YYYY-MM-DD) oder null liefert. Zweistellige Jahre (YY) werden als 20YY gelesen,
+ * M und D stehen für Monat und Tag ohne führende Null. Liefert null, wenn das Format ungültig ist.
  */
 function compileDateFormat(format) {
   if (typeof format !== "string") return null;
   const tokens = [];
   let source = "";
-  for (const [part] of format.matchAll(/YYYY|YY|MM|DD|./gs)) {
+  for (const [part] of format.matchAll(/YYYY|YY|MM|DD|M|D|./gs)) {
     if (part in DATE_TOKENS) {
       tokens.push(part);
       source += DATE_TOKENS[part];
@@ -38,18 +45,17 @@ function compileDateFormat(format) {
       source += escapeRegExp(part);
     }
   }
-  const sorted = [...tokens].sort().join();
-  if (sorted !== "DD,MM,YYYY" && sorted !== "DD,MM,YY") return null;
+  if (tokens.map((t) => t[0]).sort().join("") !== "DMY") return null;
 
   const pattern = new RegExp(`^${source}$`);
   return (value) => {
     const match = pattern.exec(value);
     if (!match) return null;
-    const v = Object.fromEntries(tokens.map((t, i) => [t, Number(match[i + 1])]));
-    const year = v.YYYY ?? 2000 + v.YY;
-    const d = new Date(Date.UTC(year, v.MM - 1, v.DD));
-    if (d.getUTCFullYear() !== year || d.getUTCMonth() !== v.MM - 1 || d.getUTCDate() !== v.DD) return null;
-    return `${year}-${pad2(v.MM)}-${pad2(v.DD)}`;
+    const v = Object.fromEntries(tokens.map((t, i) => [t[0], Number(match[i + 1])]));
+    const year = v.Y < 100 ? 2000 + v.Y : v.Y;
+    const d = new Date(Date.UTC(year, v.M - 1, v.D));
+    if (d.getUTCFullYear() !== year || d.getUTCMonth() !== v.M - 1 || d.getUTCDate() !== v.D) return null;
+    return `${year}-${pad2(v.M)}-${pad2(v.D)}`;
   };
 }
 

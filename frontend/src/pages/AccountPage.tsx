@@ -12,12 +12,13 @@ import { OFFLINE, useData, useLoad } from "../data";
 import { addMonths, dateFormat, formatIban, money, monthsBefore, parseDate, parseMonth, today, ym } from "../format";
 import { Link, navigate, useMonthParam, useTitle } from "../router";
 import { DAILY_MONTHS, balanceCourse, rangesFor, totalsByMonth } from "../stats";
-import { kindLabel, type AccountChanges } from "../types";
+import { kindLabel, type Account, type AccountChanges } from "../types";
+import DepotPage from "./DepotPage";
 
-/** Seite eines Kontos: Kontostand, Verlauf, Buchungen je Monat und Einstellungen des Kontos */
-export default function AccountPage({ id }: { id: number }) {
-  const { accounts, loaded, colorOf, refresh } = useData();
-  const account = accounts.find((a) => a.id === id);
+/** Seite eines Geldkontos: Kontostand, Verlauf, Buchungen je Monat und Einstellungen des Kontos */
+function MoneyAccount({ account }: { account: Account }) {
+  const { accounts, colorOf, refresh } = useData();
+  const { id } = account;
   const current = ym(new Date());
   const day = today();
   const stats = useLoad(() => fetchMonthStats(current, id), [id, current]);
@@ -26,22 +27,8 @@ export default function AccountPage({ id }: { id: number }) {
   const [dialog, setDialog] = useState<"edit" | "reconcile" | null>(null);
   const [range, setRange] = useState(12);
   const [error, setError] = useState("");
-  useTitle(account?.name ?? "Konto");
 
-  if (!loaded) return null;
-  if (!account) {
-    return (
-      <>
-        <div className="page-head">
-          <h1>Konto nicht gefunden</h1>
-        </div>
-        <p>
-          Dieses Konto gibt es nicht (mehr). <Link to="/">Zur Übersicht</Link>
-        </p>
-      </>
-    );
-  }
-
+  const depot = accounts.find((a) => a.cashAccountId === id);
   const totals = totalsByMonth(stats.data ?? []);
   const shown = range ? totals.slice(-range) : totals;
   const course = balanceCourse(range, stats.data ?? [], days.data ?? [], day);
@@ -91,6 +78,11 @@ export default function AccountPage({ id }: { id: number }) {
           <Link className="ghost" to={`/import?konto=${id}`}>
             Umsätze importieren
           </Link>
+          {depot && (
+            <Link className="ghost" to={`/konten/${depot.id}`}>
+              Zum Depot
+            </Link>
+          )}
           {account.transactionCount === 0 && (
             <button className="ghost danger" onClick={remove}>
               Konto löschen
@@ -180,4 +172,27 @@ export default function AccountPage({ id }: { id: number }) {
       )}
     </>
   );
+}
+
+/** Seite eines Kontos, ein Depot mit Wertpapieren hat eine eigene Darstellung */
+export default function AccountPage({ id }: { id: number }) {
+  const { accounts, loaded } = useData();
+  const account = accounts.find((a) => a.id === id);
+  useTitle(account?.name ?? "Konto");
+
+  if (!loaded) return null;
+  if (!account) {
+    return (
+      <>
+        <div className="page-head">
+          <h1>Konto nicht gefunden</h1>
+        </div>
+        <p>
+          Dieses Konto gibt es nicht (mehr). <Link to="/">Zur Übersicht</Link>
+        </p>
+      </>
+    );
+  }
+  if (account.kind === "depot" && account.movementCount > 0) return <DepotPage account={account} />;
+  return <MoneyAccount account={account} />;
 }

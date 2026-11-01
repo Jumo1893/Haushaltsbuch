@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { dateFormat, eur, formatIban, parseDate } from "../format";
+import { dateFormat, eur, formatIban, movements, parseDate } from "../format";
 import type { Account, ImportAccount, ImportPreview as Preview, ImportRow, NewAccount } from "../types";
 import AccountSelect from "./AccountSelect";
 
@@ -66,6 +66,32 @@ function AccountRow({ account }: { account: ImportAccount & { iban: string } }) 
   );
 }
 
+/** Wohin die Wertpapierbewegungen gehen: das Depot des gewählten Kontos, gibt es noch keins, legt der Import es an */
+function DepotRow({ preview, accounts, accountId }: Pick<Props, "preview" | "accounts" | "accountId">) {
+  const chosen = accounts.find((a) => a.id === accountId);
+  const depot = chosen?.kind === "depot" ? chosen : accounts.find((a) => a.cashAccountId === accountId);
+  const name = depot?.name ?? (chosen ? `${chosen.name} Depot` : "Depot des gewählten Kontos");
+  const { positions, new: fresh, duplicate } = preview.depot;
+  return (
+    <>
+      <h3>Depot</h3>
+      <ul className="rows">
+        <li>
+          <div>
+            {name}
+            {chosen && !depot && <span className="badge">Neues Depot</span>}
+            <small>
+              {positions} {positions === 1 ? "Wertpapier" : "Wertpapiere"}
+              {duplicate > 0 && `, ${movements(duplicate)} schon vorhanden`}
+            </small>
+          </div>
+          <span className="count">{fresh > 0 ? `${movements(fresh)} neu` : "Keine neuen"}</span>
+        </li>
+      </ul>
+    </>
+  );
+}
+
 export default function ImportPreview({
   preview,
   accounts,
@@ -79,12 +105,16 @@ export default function ImportPreview({
   onCancel,
 }: Props) {
   const selectId = useId();
-  const { counts, sample, duplicates, errors, skipped } = preview;
+  const { counts, sample, duplicates, errors, skipped, depot } = preview;
   const toImport = counts.new + (includeDuplicates ? counts.duplicate : 0);
+  const depotRows = depot.new + depot.duplicate;
+  const depotToImport = depot.new + (includeDuplicates ? depot.duplicate : 0);
   const withIban = preview.accounts.filter((a): a is ImportAccount & { iban: string } => a.iban !== null);
   const withoutIban = preview.accounts.find((a) => a.iban === null);
-  // Für Datensätze ohne IBAN muss ein Konto gewählt sein, sofern welche importiert werden
-  const needsAccount = !!withoutIban && withoutIban.new + (includeDuplicates ? withoutIban.duplicate : 0) > 0;
+  // Für Datensätze ohne IBAN und Wertpapierbewegungen muss ein Konto gewählt sein, sofern welche importiert werden
+  const needsAccount =
+    depotToImport > 0 || (!!withoutIban && withoutIban.new + (includeDuplicates ? withoutIban.duplicate : 0) > 0);
+  const parts = [toImport > 0 && records(toImport), depotToImport > 0 && movements(depotToImport)];
 
   return (
     <div className="preview">
@@ -96,6 +126,7 @@ export default function ImportPreview({
         <Stat label="Datensätze" value={counts.total} />
         <Stat label="Neu" value={counts.new} />
         <Stat label="Mögliche Duplikate" value={counts.duplicate} />
+        {counts.depot > 0 && <Stat label="Nur Depot" value={counts.depot} />}
         {counts.skipped > 0 && <Stat label="Nicht übernommen" value={counts.skipped} />}
         <Stat label="Fehlerhaft" value={counts.invalid} />
       </dl>
@@ -111,10 +142,10 @@ export default function ImportPreview({
         </>
       )}
 
-      {withoutIban && (
+      {(withoutIban || depotRows > 0) && (
         <div className="import-account">
           <label htmlFor={selectId}>
-            {withIban.length ? `Konto für ${records(withoutIban.new + withoutIban.duplicate)} ohne IBAN` : "Konto"}
+            {withIban.length && withoutIban ? `Konto für ${records(withoutIban.new + withoutIban.duplicate)} ohne IBAN` : "Konto"}
           </label>
           <AccountSelect
             id={selectId}
@@ -126,15 +157,19 @@ export default function ImportPreview({
           />
           {!withIban.length && (
             <small className="hint">
-              Die Datei enthält keine IBAN des eigenen Kontos. Bitte wähle, zu welchem Konto die Umsätze gehören.
+              {withoutIban
+                ? "Die Datei enthält keine IBAN des eigenen Kontos. Bitte wähle, zu welchem Konto die Umsätze gehören."
+                : "Bitte wähle das Geldkonto, zu dem das Depot gehört."}
             </small>
           )}
         </div>
       )}
 
+      {depotRows > 0 && <DepotRow preview={preview} accounts={accounts} accountId={accountId} />}
+
       {sample.length > 0 ? (
         <>
-          <h3>{sample.length < counts.new + counts.duplicate ? `Die ersten ${sample.length} Datensätze` : "Datensätze"}</h3>
+          <h3>{sample.length < (counts.new + counts.duplicate || counts.depot) ? `Die ersten ${sample.length} Datensätze` : "Datensätze"}</h3>
           <ul className="rows">
             {sample.map((r) => (
               <Row key={r.line} row={r} />
@@ -191,8 +226,12 @@ export default function ImportPreview({
       )}
 
       <div className="actions">
-        <button className="add" disabled={importing || toImport === 0 || (needsAccount && accountId === null)} onClick={onConfirm}>
-          {importing ? "Wird importiert …" : `${records(toImport)} importieren`}
+        <button
+          className="add"
+          disabled={importing || toImport + depotToImport === 0 || (needsAccount && accountId === null)}
+          onClick={onConfirm}
+        >
+          {importing ? "Wird importiert …" : `${parts.filter(Boolean).join(" und ") || records(0)} importieren`}
         </button>
         <button className="ghost" disabled={importing} onClick={onCancel}>
           Abbrechen

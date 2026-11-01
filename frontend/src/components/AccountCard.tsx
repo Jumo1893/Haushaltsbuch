@@ -6,10 +6,10 @@ import Sparkline from "./charts/Sparkline";
 /** Ab so vielen Tagen ohne neue Buchung nennt die Karte das Alter statt des Datums */
 const STALE_DAYS = 30;
 
-function lastBooking(date: string | null) {
+function lastActivity(date: string | null, what: string) {
   if (!date) return "Noch keine Buchungen";
   const days = daysBetween(date, today());
-  return days > STALE_DAYS ? `Letzte Buchung vor ${days} Tagen` : `Letzte Buchung ${dateFormat.format(parseDate(date))}`;
+  return days > STALE_DAYS ? `Letzte ${what} vor ${days} Tagen` : `Letzte ${what} ${dateFormat.format(parseDate(date))}`;
 }
 
 interface Props {
@@ -31,7 +31,7 @@ export default function AccountCard({ account, color, balances }: Props) {
       <span className="card-balance">{money(account.balance)}</span>
       <Sparkline values={balances} color={color} />
       <small className="meta">
-        {lastBooking(account.lastDate)}
+        {lastActivity(account.lastDate, account.movementCount > 0 ? "Bewegung" : "Buchung")}
         {account.bankBalance === null && account.transactionCount > 0 && " · nicht abgeglichen"}
       </small>
     </Link>
