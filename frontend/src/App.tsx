@@ -3,6 +3,7 @@ import NewTransactionDialog from "./components/NewTransactionDialog";
 import { DataProvider, useData } from "./data";
 import AccountPage from "./pages/AccountPage";
 import BookingsPage from "./pages/BookingsPage";
+import CategoriesPage from "./pages/CategoriesPage";
 import DashboardPage from "./pages/DashboardPage";
 import ImportPage from "./pages/ImportPage";
 import { Link, navigate, useLocation, useTitle } from "./router";
@@ -11,6 +12,7 @@ import type { Transaction } from "./types";
 const NAV: [string, string][] = [
   ["/", "Übersicht"],
   ["/buchungen", "Buchungen"],
+  ["/kategorien", "Kategorien"],
   ["/import", "Import"],
 ];
 
@@ -47,6 +49,7 @@ function Shell() {
   let page: ReactNode;
   if (path === "/") page = <DashboardPage />;
   else if (path === "/buchungen") page = <BookingsPage />;
+  else if (path === "/kategorien") page = <CategoriesPage />;
   else if (path === "/import") page = <ImportPage />;
   else if (accountId) page = <AccountPage key={accountId} id={accountId} />;
   else page = <NotFound />;

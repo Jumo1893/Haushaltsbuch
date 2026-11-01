@@ -4,10 +4,11 @@
 const express = require("express");
 const { ImportError, analyzeFile, markDuplicates, ownIban, groupByIban, countStatuses, buildPreview } = require("./analyze");
 const { accountsForIbans } = require("../accounts");
+const { FALLBACK_CATEGORY } = require("../categories");
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Kategorie für importierte Umsätze, bis es eine Kategorisierung gibt */
-const IMPORT_CATEGORY = "Sonstiges";
+const IMPORT_CATEGORY = FALLBACK_CATEGORY;
 /** So viele der letzten Importe liefert GET /api/imports */
 const HISTORY_LIMIT = 50;
 

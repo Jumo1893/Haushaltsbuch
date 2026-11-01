@@ -14,7 +14,8 @@ const {
   readSearchQuery,
 } = require("./transactions");
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
-const { TRANSFER, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
+const { KINDS: CATEGORY_KINDS, FALLBACK_CATEGORY, DEFAULT_CATEGORIES, readCategory } = require("./categories");
+const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
 // als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
@@ -26,6 +27,13 @@ app.use(express.json());
 const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
   to_char(t.date, 'YYYY-MM-DD') AS date, t.note, t.counterparty, t.purpose, t.import_id AS "importId",
   t.account_id AS "accountId", ${TRANSFER} AS transfer FROM transactions t`;
+
+// Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen
+const CATEGORIES = `SELECT c.id, c.kind, c.name, c.name = '${FALLBACK_CATEGORY}' AS fixed,
+  COALESCE(u.count, 0)::int AS "transactionCount"
+  FROM categories c LEFT JOIN (
+    SELECT t.category, ${KIND} AS kind, count(*) AS count FROM transactions t GROUP BY 1, 2
+  ) u ON u.category = c.name AND u.kind = c.kind`;
 
 // Fehlercodes von Postgres
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -83,6 +91,19 @@ const SCHEMA = [
   "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS extra_ibans TEXT[] NOT NULL DEFAULT '{}'",
   // Früher markierte die Kategorie „Umbuchung“ eine Buchung von Hand als Umbuchung
   "UPDATE transactions SET transfer_override = true, category = 'Sonstiges' WHERE category = 'Umbuchung'",
+  // Kategorien je Art; Buchungen speichern nur den Namen
+  `CREATE TABLE IF NOT EXISTS categories (
+    id SERIAL PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN (${CATEGORY_KINDS.map((k) => `'${k}'`).join(",")})),
+    name TEXT NOT NULL,
+    UNIQUE (kind, name)
+  )`,
+  // Die Standardliste nur in eine leere Tabelle, sonst kämen gelöschte Kategorien bei jedem Start wieder
+  `INSERT INTO categories (kind, name)
+   SELECT d.kind, d.name FROM (VALUES ${Object.entries(DEFAULT_CATEGORIES)
+    .flatMap(([kind, names]) => names.map((name) => `('${kind}', '${name}')`))
+    .join(", ")}) AS d(kind, name)
+   WHERE NOT EXISTS (SELECT 1 FROM categories)`,
 ];
 
 /**
@@ -185,7 +206,7 @@ app.get("/api/transactions/search", async (req, res) => {
     const { rows } = await pool.query(
       `${SELECT} WHERE concat_ws(' ', t.counterparty, t.purpose, t.note) ILIKE ALL ($1::text[])
          AND ($2::text IS NULL OR t.category = $2)
-         AND ($3::text IS NULL OR CASE WHEN ${TRANSFER} THEN 'transfer' ELSE t.type END = $3)
+         AND ($3::text IS NULL OR ${KIND} = $3)
          AND ($4::int IS NULL OR t.account_id = $4)
        ORDER BY t.date DESC, t.id DESC`, [patterns, category, type, account]);
     res.json(rows);
@@ -313,6 +334,74 @@ app.delete("/api/accounts/:id", async (req, res) => {
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(409).json({ error: "Das Konto enthält noch Buchungen." });
     console.error(e); res.status(500).json({ error: "Serverfehler" });
   }
+});
+
+/** Eine Kategorie wie in GET /api/categories */
+const findCategory = async (id) => (await pool.query(`${CATEGORIES} WHERE c.id = $1`, [id])).rows[0];
+
+app.get("/api/categories", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`${CATEGORIES} ORDER BY c.name = '${FALLBACK_CATEGORY}', c.id`);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+app.post("/api/categories", async (req, res) => {
+  const { values, error } = readCategory(req.body || {});
+  if (error) return res.status(400).json({ error });
+  try {
+    const { rows } = await pool.query(
+      "INSERT INTO categories (kind, name) VALUES ($1, $2) RETURNING id", [values.kind, values.name]);
+    res.status(201).json(await findCategory(rows[0].id));
+  } catch (e) {
+    if (e.code === UNIQUE_VIOLATION) return res.status(409).json({ error: "Diese Kategorie gibt es schon." });
+    console.error(e); res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
+// Benennt die Kategorie um, ihre Buchungen ändern sich im selben Schritt mit
+app.patch("/api/categories/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  const { values, error } = readCategory(req.body || {}, true);
+  if (error) return res.status(400).json({ error });
+  try {
+    const category = await findCategory(id);
+    if (!category) return res.status(404).json({ error: "Kategorie nicht gefunden" });
+    if (category.fixed) return res.status(409).json({ error: `„${category.name}“ lässt sich nicht umbenennen.` });
+    await pool.query(
+      `WITH renamed AS (UPDATE categories SET name = $2 WHERE id = $1)
+       UPDATE transactions t SET category = $2 WHERE t.category = $3 AND ${KIND} = $4`,
+      [id, values.name, category.name, category.kind]);
+    res.json(await findCategory(id));
+  } catch (e) {
+    if (e.code === UNIQUE_VIOLATION) return res.status(409).json({ error: "Diese Kategorie gibt es schon." });
+    console.error(e); res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
+// Löscht die Kategorie; ihre Buchungen wandern in die Kategorie moveTo, ohne Angabe in die Auffangkategorie
+app.delete("/api/categories/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  const moveTo = accountParam(req.query.moveTo);
+  if (Number.isNaN(moveTo)) return res.status(400).json({ error: "Ungültige Zielkategorie" });
+  try {
+    const category = await findCategory(id);
+    if (!category) return res.status(404).json({ error: "Kategorie nicht gefunden" });
+    if (category.fixed) return res.status(409).json({ error: `„${category.name}“ lässt sich nicht löschen.` });
+    const target = moveTo === null
+      ? (await pool.query(`${CATEGORIES} WHERE c.kind = $1 AND c.name = $2`, [category.kind, FALLBACK_CATEGORY])).rows[0]
+      : await findCategory(moveTo);
+    if (!target || target.kind !== category.kind || target.id === id) {
+      return res.status(400).json({ error: "Ungültige Zielkategorie" });
+    }
+    await pool.query(
+      `WITH moved AS (UPDATE transactions t SET category = $2 WHERE t.category = $3 AND ${KIND} = $4)
+       DELETE FROM categories WHERE id = $1`,
+      [id, target.name, category.name, category.kind]);
+    res.status(204).end();
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
 // Werte je Monat und Konto für Verlauf und Übersicht, bis zum Monat until (der aktuelle Monat des Browsers)

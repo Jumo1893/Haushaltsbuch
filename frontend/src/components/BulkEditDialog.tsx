@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "../api";
 import { useData } from "../data";
 import { bookings, dateFormat, eur, parseDate } from "../format";
-import { CATEGORIES, kindOf, type BulkChanges, type Transaction, type TxKind } from "../types";
+import { kindOf, type BulkChanges, type Transaction, type TxKind } from "../types";
+import CategorySelect from "./CategorySelect";
 
 /** Dieselbe Änderung für mehrere Buchungen */
 export interface BulkUpdate {
@@ -106,16 +107,13 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
                 ? `Kategorie für ${ids.length} ${KIND_NAMES[kind][ids.length === 1 ? 0 : 1]}`
                 : "Kategorie"}
             </label>
-            <select
+            <CategorySelect
               id={`${id}-${kind}`}
+              kind={kind}
               value={categories[kind]}
-              onChange={(e) => setCategories({ ...categories, [kind]: e.target.value })}
-            >
-              <option value="">Nicht ändern</option>
-              {CATEGORIES[kind].map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
+              emptyLabel="Nicht ändern"
+              onChange={(name) => setCategories((current) => ({ ...current, [kind]: name }))}
+            />
           </div>
         ))}
         <div className="full">

@@ -2,6 +2,7 @@ import type {
   Account,
   AccountChanges,
   BulkChanges,
+  Category,
   DayBalance,
   ImportOptions,
   ImportPreview,
@@ -9,6 +10,7 @@ import type {
   ImportRun,
   MonthStat,
   NewAccount,
+  NewCategory,
   NewTransaction,
   ProfileMismatch,
   Transaction,
@@ -102,6 +104,27 @@ export const updateAccount = (id: number, changes: AccountChanges) =>
   });
 
 export const deleteAccount = (id: number) => request<null>(`accounts/${id}`, { method: "DELETE" });
+
+export const fetchCategories = () => request<Category[]>("categories");
+
+export const createCategory = (category: NewCategory) =>
+  request<Category>("categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(category),
+  });
+
+/** Benennt die Kategorie um, ihre Buchungen ändern sich mit */
+export const renameCategory = (id: number, name: string) =>
+  request<Category>(`categories/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+
+/** Löscht die Kategorie; ihre Buchungen wandern in die Kategorie moveTo */
+export const deleteCategory = (id: number, moveTo: number) =>
+  request<null>(`categories/${id}?moveTo=${moveTo}`, { method: "DELETE" });
 
 export const fetchImportOptions = () => request<ImportOptions>("import-profiles");
 

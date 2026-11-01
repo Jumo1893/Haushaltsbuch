@@ -154,14 +154,17 @@ export interface ProfileMismatch {
   missing: string[];
 }
 
-export const CATEGORIES: Record<TxKind, string[]> = {
-  out: ["Wohnen", "Lebensmittel", "Mobilität", "Freizeit", "Versicherung", "Gesundheit", "Sonstiges"],
-  in: ["Gehalt", "Nebenverdienst", "Erstattung", "Sonstiges"],
-  transfer: ["Sparen", "Investieren", "Bargeld", "Sonstiges"],
-};
+/** Eine Kategorie gehört zu einer Art; Buchungen speichern ihren Namen */
+export interface NewCategory {
+  kind: TxKind;
+  name: string;
+}
 
-/** Kategorien aller Arten zusammen, jede einmal */
-export const ALL_CATEGORIES = [...new Set(Object.values(CATEGORIES).flat())];
+export interface Category extends NewCategory {
+  id: number;
+  fixed: boolean; // lässt sich weder umbenennen noch löschen
+  transactionCount: number;
+}
 
 export const ACCOUNT_KINDS: [AccountKind, string][] = [
   ["giro", "Girokonto"],

@@ -29,6 +29,9 @@ const TRANSFER = `COALESCE(t.transfer_override, EXISTS (
   OR (COALESCE(${COUNTERPARTY_IBAN}, '') = ''
     AND t.details->>'bookingText' IN (${TRANSFER_BOOKING_TEXTS.map((text) => `'${text}'`).join(",")})), false)`;
 
+/** Art der Buchung t: `transfer` bei einer Umbuchung, sonst `in` oder `out` */
+const KIND = `CASE WHEN ${TRANSFER} THEN 'transfer' ELSE t.type END`;
+
 /**
  * Kontostand des Kontos a vor seiner ersten Buchung. Ist ein Kontostand laut Bank an einem Tag
  * hinterlegt, ergibt er sich daraus und aus den Buchungen bis zu diesem Tag, sonst ist er 0.
@@ -130,4 +133,4 @@ async function dailyBalances(db, from, until, accountId = null) {
   return rows;
 }
 
-module.exports = { SIGNED, TRANSFER, OPENING, ACCOUNTS, monthlyStats, dailyBalances };
+module.exports = { SIGNED, TRANSFER, KIND, OPENING, ACCOUNTS, monthlyStats, dailyBalances };

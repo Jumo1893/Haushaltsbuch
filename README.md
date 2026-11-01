@@ -29,14 +29,14 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
   (siehe „CSV-Import“)
 - Helles und dunkles Design (folgt der Systemeinstellung), für Mobilgeräte geeignet
 
-Kategorien:
+Kategorien gibt es je Art. Zu Beginn sind das die folgenden, unter „Kategorien“ lassen sie sich anlegen, umbenennen und
+löschen (siehe „Oberfläche“):
 - **Ausgaben:** Wohnen, Lebensmittel, Mobilität, Freizeit, Versicherung, Gesundheit, Sonstiges
 - **Einnahmen:** Gehalt, Nebenverdienst, Erstattung, Sonstiges
 - **Umbuchungen:** Sparen, Investieren, Bargeld, Sonstiges
 
 Umbuchungen sind Geld, das zwischen eigenen Konten wandert (siehe „Umbuchungen“). Ihre Kategorie dient nur der Ordnung
-und fließt in keine Auswertung ein. Die Kategorien sind in `frontend/src/types.ts` festgelegt und lassen sich dort
-anpassen.
+und fließt in keine Auswertung ein.
 
 ## Voraussetzungen
 - [Podman](https://podman.io/docs/installation) (z. B. Podman Desktop) mit einem Compose-Provider:
@@ -114,7 +114,7 @@ erreichbar. Wenn sie nur auf dem eigenen Rechner laufen soll, in `docker-compose
 `"127.0.0.1:8080:80"` statt `"8080:80"` eintragen.
 
 ## Oberfläche
-Oben auf jeder Seite stehen die Navigation (Übersicht, Buchungen, Import) und „Neue Buchung“. Jede Seite hat eine
+Oben auf jeder Seite stehen die Navigation (Übersicht, Buchungen, Kategorien, Import) und „Neue Buchung“. Jede Seite hat eine
 eigene Adresse und lässt sich als Lesezeichen speichern, der gewählte Monat steht mit darin
 (z. B. `/buchungen?monat=2026-10`).
 
@@ -148,6 +148,16 @@ Kästchen auswählen, mit „Alle auswählen“ alle gezeigten.
   lässt sich für jede eine Kategorie wählen, weil sie verschiedene Kategorien haben.
 - Eine neue Notiz ersetzt vorhandene Notizen, „Vorhandene Notizen entfernen“ leert sie.
 - Die Änderung lässt sich nicht rückgängig machen.
+
+**Kategorien** (`/kategorien`): die Kategorien je Art mit der Zahl ihrer Buchungen. Neue Kategorien lassen sich auch
+direkt in jeder Kategorieauswahl unter „Neue Kategorie anlegen …“ anlegen.
+- **Umbenennen:** Die Buchungen dieser Kategorie ändern sich mit. Ein Name kommt je Art nur einmal vor.
+- **Löschen:** Die Buchungen der Kategorie wandern in eine andere derselben Art, vorausgewählt ist „Sonstiges“. Das lässt
+  sich nicht rückgängig machen. So lassen sich auch zwei Kategorien zusammenlegen.
+- **„Sonstiges“** ist fest und lässt sich weder umbenennen noch löschen, denn hier landen importierte Buchungen.
+
+Eine Kategorie gehört zur Art der Buchung: „Sonstiges“ gibt es dreimal, Änderungen gelten nur für die jeweilige Art. Wird
+eine Buchung später zur Umbuchung, behält sie ihre Kategorie, auch wenn die Liste der Umbuchungen sie nicht enthält.
 
 **Import** (`/import`): der CSV-Import (siehe „CSV-Import“) und die letzten 50 Importe mit Datum, Datei, Anzahlen und
 den Konten, in die sie Umsätze übernommen haben.
@@ -342,7 +352,7 @@ Nach Änderungen am Backend (`backend/`) das Backend neu bauen:
 Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neuer IP-Adresse.
 
 ## Tests
-Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
+Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
 Bank), die Parameter von Buchungsliste und Suche und den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
 Duplikaterkennung, Zuordnung zu Konten) laufen mit dem Test-Runner von Node.js 20+ und brauchen keine Datenbank:
 ```
@@ -358,6 +368,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── server.js             Express-API und Tabellen-Setup
 │   ├── transactions.js       Prüfung der Eingaben beim Anlegen, Ändern und Suchen von Buchungen
 │   ├── accounts.js           Konten: Prüfung der Eingaben, IBAN, Zuordnung beim Import
+│   ├── categories.js         Kategorien: Standardliste und Prüfung der Eingaben
 │   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
@@ -372,18 +383,19 @@ Die Testdateien enthalten nur erfundene Daten.
         ├── main.tsx          Einstieg, rendert <App />
         ├── App.tsx           Kopfleiste, Navigation, Auswahl der Seite, „Neue Buchung“
         ├── router.tsx        Seitenwechsel über die Adresse (History-API), Monat und Filter als Parameter
-        ├── data.tsx          Konten für alle Seiten, Neuladen nach Änderungen (useLoad)
+        ├── data.tsx          Konten und Kategorien für alle Seiten, Neuladen nach Änderungen (useLoad)
         ├── api.ts            Typisierte Aufrufe der REST-API
         ├── stats.ts          Summen je Monat, Saldo, größte Ausgaben
-        ├── types.ts          Typen und Kategorien
+        ├── types.ts          Typen und Kontoarten
         ├── format.ts         Währungs- und Datumsformatierung
         ├── index.css         Styles inkl. Dark Mode und Diagrammfarben
-        ├── pages/            DashboardPage, AccountPage, BookingsPage, ImportPage
+        ├── pages/            DashboardPage, AccountPage, BookingsPage, CategoriesPage, ImportPage
         └── components/       MonthNav, BookingsView, BookingFilters, MonthKpis,
             │                 BalanceCard, CategoryBreakdown, TopPayees,
             │                 TransactionList, TransactionForm, NewTransactionDialog,
             │                 EditTransactionDialog, BulkEditDialog, AccountCard,
             │                 AccountDialog, AccountSelect, ReconcileDialog, Segmented,
+            │                 CategorySelect, CategoryDialog, DeleteCategoryDialog,
             │                 CsvImport, ImportPreview, ImportHistory
             └── charts/       LineChart, CashflowChart, Sparkline, ChartTable
                               (eigenes SVG, ohne Diagramm-Bibliothek)
@@ -435,6 +447,15 @@ Ein Eintrag je Konto.
 | `bank_balance` | `NUMERIC(12,2)` | Kontostand laut Bank am Ende des Tages `bank_balance_date`, optional (siehe „Kontostand abgleichen“) |
 | `bank_balance_date` | `DATE`   | Tag dieses Kontostands; gesetzt genau dann, wenn `bank_balance` gesetzt ist |
 
+### Tabelle `categories`
+Ein Eintrag je Kategorie und Art. Buchungen speichern den Namen der Kategorie in `transactions.category`.
+
+| Spalte | Typ      | Hinweis |
+|--------|----------|---------|
+| `id`   | `SERIAL` | Primärschlüssel |
+| `kind` | `TEXT`   | `out` (Ausgaben), `in` (Einnahmen) oder `transfer` (Umbuchungen) |
+| `name` | `TEXT`   | max. 40 Zeichen, je Art nur einmal |
+
 ### Tabelle `imports`
 Ein Eintrag je Importvorgang.
 
@@ -484,6 +505,10 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `POST`   | `/api/accounts`                      | Konto anlegen, liefert es mit `201` zurück |
 | `PATCH`  | `/api/accounts/:id`                  | Konto ändern, nur die übergebenen Felder; liefert das geänderte Konto |
 | `DELETE` | `/api/accounts/:id`                  | Konto löschen, `204`; enthält es noch Buchungen, `409` |
+| `GET`    | `/api/categories`                    | Kategorien aller Arten, „Sonstiges“ jeweils zuletzt |
+| `POST`   | `/api/categories`                    | Kategorie anlegen, liefert sie mit `201` zurück |
+| `PATCH`  | `/api/categories/:id`                | Kategorie umbenennen, ihre Buchungen ändern sich mit; liefert die geänderte Kategorie |
+| `DELETE` | `/api/categories/:id?moveTo=ID`      | Kategorie löschen, `204`. Ihre Buchungen wandern in die Kategorie `moveTo` derselben Art, ohne Angabe in „Sonstiges“ |
 | `GET`    | `/api/import-profiles`               | Importprofile und maximale Dateigröße |
 | `GET`    | `/api/imports`                       | Die letzten 50 Importe, neueste zuerst, mit den Konten, in die sie Umsätze übernommen haben |
 | `POST`   | `/api/imports/preview?profile=ID`    | Datei prüfen und Vorschau liefern, speichert nichts |
@@ -524,6 +549,10 @@ Den Kontostand laut Bank setzen beide Felder zusammen, `null` für beide entfern
 Konten enthalten zusätzlich `extraIbans`, `bankBalance` und `bankBalanceDate` (ohne Abgleich `null`), `balance` (Kontostand nach
 allen Buchungen), `pendingRoundUps` (bei Trade Republic für Round-Ups vorgemerkt, sonst 0), `transactionCount` sowie
 `firstDate` und `lastDate` (erster und letzter Buchungstag, ohne Buchungen `null`).
+
+Body für `POST /api/categories`: `{ "kind": "out", "name": "Haustier" }`, für `PATCH`: `{ "name": "Tiere" }`. Kategorien
+enthalten zusätzlich `id`, `transactionCount` (Buchungen dieser Art und Kategorie) und `fixed`: `true` bei „Sonstiges“,
+das sich nicht ändern lässt (`409`). Name schon vergeben: ebenfalls `409`.
 
 `GET /api/stats/months` liefert je Konto und Monat z. B.
 `{ "month": "2026-10", "accountId": 1, "income": 2850, "expenses": 1935.59, "transfers": -300, "balance": 3456.78 }`:

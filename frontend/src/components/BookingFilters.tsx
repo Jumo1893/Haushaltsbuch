@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ALL_CATEGORIES, NO_FILTERS, isFiltered, type Account, type TransactionFilters, type TxKind } from "../types";
+import { useData } from "../data";
+import { NO_FILTERS, isFiltered, type Account, type TransactionFilters, type TxKind } from "../types";
 import Segmented from "./Segmented";
 
 /** So lange (ms) muss die Eingabe ruhen, bevor gesucht wird */
@@ -20,6 +21,7 @@ interface Props {
 
 /** Suchfeld und Filter über der Buchungsliste */
 export default function BookingFilters({ filters, accounts, onChange }: Props) {
+  const { categoryNames } = useData();
   const [text, setText] = useState(filters.text);
 
   // Geänderte Adresse übernehmen, z. B. ein Klick auf „Buchungen“ in der Navigation
@@ -66,7 +68,7 @@ export default function BookingFilters({ filters, accounts, onChange }: Props) {
         onChange={(e) => onChange({ ...filters, category: e.target.value })}
       >
         <option value="">Alle Kategorien</option>
-        {ALL_CATEGORIES.map((c) => (
+        {[...new Set(Object.values(categoryNames).flat())].map((c) => (
           <option key={c}>{c}</option>
         ))}
       </select>

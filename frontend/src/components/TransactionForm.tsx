@@ -1,7 +1,7 @@
 import { useId, useRef, useState, type FormEvent } from "react";
+import { useData } from "../data";
 import { today } from "../format";
 import {
-  CATEGORIES,
   kindOf,
   type Account,
   type NewAccount,
@@ -10,6 +10,7 @@ import {
   type TxType,
 } from "../types";
 import AccountSelect from "./AccountSelect";
+import CategorySelect from "./CategorySelect";
 import Segmented from "./Segmented";
 
 const KINDS: [TxKind, string][] = [
@@ -50,11 +51,12 @@ export default function TransactionForm({
   onCancel,
 }: Props) {
   const id = useId(); // eindeutige IDs, weil das Formular mehrfach auf der Seite stehen kann
+  const { categoryNames } = useData();
   const [type, setType] = useState<TxType>(initial?.type ?? "out");
   const [transfer, setTransfer] = useState(initial?.transfer ?? false);
   const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
   const [date, setDate] = useState(initial?.date ?? today);
-  const [category, setCategory] = useState(initial?.category ?? CATEGORIES.out[0]);
+  const [categoryName, setCategoryName] = useState(initial?.category ?? null);
   const [note, setNote] = useState(initial?.note ?? "");
   const [accountId, setAccountId] = useState(initial?.accountId ?? defaultAccountId);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -64,19 +66,19 @@ export default function TransactionForm({
 
   const kind = kindOf({ type, transfer });
 
-  // Eine Kategorie, die nicht (mehr) in der Liste steht, bleibt auswählbar
-  const categories = CATEGORIES[kind].includes(category) ? CATEGORIES[kind] : [category, ...CATEGORIES[kind]];
+  // Ohne Auswahl gilt die erste Kategorie der Art, sobald die Kategorien geladen sind
+  const category = categoryName ?? categoryNames[kind][0] ?? "";
 
   const changeKind = (k: TxKind) => {
     setTransfer(k === "transfer");
     if (k !== "transfer") setType(k);
-    if (!CATEGORIES[k].includes(category)) setCategory(CATEGORIES[k][0]);
+    if (!categoryNames[k].includes(category)) setCategoryName(null);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(amount);
-    if (!(amt > 0) || account === null) return;
+    if (!(amt > 0) || account === null || !category) return;
     const ok = await onSubmit({ type, transfer, amount: amt, category, date, note: note.trim(), accountId: account });
     if (ok && !initial) {
       setAmount("");
@@ -147,11 +149,7 @@ export default function TransactionForm({
       </div>
       <div>
         <label htmlFor={`${id}-cat`}>Kategorie</label>
-        <select id={`${id}-cat`} value={category} onChange={(e) => setCategory(e.target.value)}>
-          {categories.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
+        <CategorySelect id={`${id}-cat`} kind={kind} value={category} onChange={setCategoryName} />
       </div>
       <div className="full">
         <label htmlFor={`${id}-note`}>Notiz</label>

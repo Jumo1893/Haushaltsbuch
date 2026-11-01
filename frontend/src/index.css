@@ -200,7 +200,7 @@ dialog.edit .table-scroll{max-height:220px;padding-right:6px}
 .source div{margin-bottom:6px}
 .source dt{font-size:.8rem;color:var(--muted)}
 .source dd{margin:0;overflow-wrap:anywhere}
-@media (max-width:600px){.top nav{order:3;width:100%}.top nav a{flex:1;text-align:center}}
+@media (max-width:600px){.top nav{order:3;width:100%}.top nav a{flex:1;padding:6px 4px;text-align:center}}
 @media (max-width:480px){.bar{grid-template-columns:90px 1fr auto}
 .selectable>li{grid-template-columns:auto minmax(0,1fr)}.selectable .del{grid-column:2;justify-self:end;margin-top:-8px}.selection>span{flex-basis:100%}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}

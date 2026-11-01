@@ -8,8 +8,8 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
-import { createAccount as postAccount, fetchAccounts } from "./api";
-import type { Account, NewAccount } from "./types";
+import { createAccount as postAccount, createCategory as postCategory, fetchAccounts, fetchCategories } from "./api";
+import type { Account, Category, NewAccount, NewCategory, TxKind } from "./types";
 
 export const OFFLINE = "Der Server ist nicht erreichbar. Prüfe, ob alle Container laufen.";
 
@@ -19,6 +19,10 @@ const ACCOUNT_COLORS = 8;
 interface Data {
   /** Konten mit Kontostand, nach Name sortiert */
   accounts: Account[];
+  /** Kategorien aller Arten mit der Zahl ihrer Buchungen */
+  categories: Category[];
+  /** Namen der Kategorien je Art, für die Auswahllisten */
+  categoryNames: Record<TxKind, string[]>;
   /** true, sobald die Konten einmal geladen wurden */
   loaded: boolean;
   error: string;
@@ -28,6 +32,8 @@ interface Data {
   refresh: () => void;
   /** Legt ein Konto an; Fehler zeigt der aufrufende Dialog an */
   createAccount: (account: NewAccount) => Promise<Account>;
+  /** Legt eine Kategorie an; Fehler zeigt der aufrufende Dialog an */
+  createCategory: (category: NewCategory) => Promise<Category>;
   /** Farbe eines Kontos in Diagrammen. Sie folgt der Reihenfolge der Anlage und bleibt so gleich. */
   colorOf: (accountId: number) => string;
 }
@@ -39,16 +45,18 @@ const byName = (a: Account, b: Account) => a.name.localeCompare(b.name, "de") ||
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let current = true;
-    fetchAccounts()
-      .then((list) => {
+    Promise.all([fetchAccounts(), fetchCategories()])
+      .then(([accountList, categoryList]) => {
         if (!current) return;
-        setAccounts(list.sort(byName));
+        setAccounts(accountList.sort(byName));
+        setCategories(categoryList);
         setError("");
         setLoaded(true);
       })
@@ -70,6 +78,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const createCategory = useCallback(
+    async (category: NewCategory) => {
+      const created = await postCategory(category);
+      setCategories((list) => [...list, created]);
+      refresh();
+      return created;
+    },
+    [refresh],
+  );
+
+  const categoryNames = useMemo(() => {
+    const names = (kind: TxKind) => categories.filter((c) => c.kind === kind).map((c) => c.name);
+    return { out: names("out"), in: names("in"), transfer: names("transfer") };
+  }, [categories]);
+
   const colorOf = useMemo(() => {
     const slots = new Map([...accounts].sort((a, b) => a.id - b.id).map((a, i) => [a.id, i]));
     return (id: number) => {
@@ -79,8 +102,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [accounts]);
 
   const value = useMemo(
-    () => ({ accounts, loaded, error, version, refresh, createAccount, colorOf }),
-    [accounts, loaded, error, version, refresh, createAccount, colorOf],
+    () => ({
+      accounts,
+      categories,
+      categoryNames,
+      loaded,
+      error,
+      version,
+      refresh,
+      createAccount,
+      createCategory,
+      colorOf,
+    }),
+    [accounts, categories, categoryNames, loaded, error, version, refresh, createAccount, createCategory, colorOf],
   );
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
