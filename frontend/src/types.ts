@@ -180,6 +180,21 @@ export interface Depot {
   history: DepotMonth[];
   movements: DepotMovement[]; // neueste zuerst
   pricesFetchedAt: string | null; // ISO-Zeitstempel des letzten Kursabrufs, null: noch nie
+  autoPrices: AutoPrices;
+}
+
+/** Ein Versuch des täglichen Kursabrufs */
+export interface AutoPriceRun {
+  ranAt: string; // ISO-Zeitstempel
+  updated: number; // abgerufene Kurse
+  failed: { name: string; error: string }[]; // Positionen ohne Kurs
+}
+
+/** Täglicher Kursabruf eines Depots, an Werktagen um 22:30 Uhr */
+export interface AutoPrices {
+  enabled: boolean;
+  next: string; // ISO-Zeitstempel des nächsten Termins
+  last: AutoPriceRun | null; // null: noch kein Versuch
 }
 
 /** Ergebnis des Kursabrufs für eine Position; ohne Quelle (Private Markets) fehlen Kurs und Fehler */

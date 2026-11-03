@@ -6,7 +6,7 @@
 // Beträge rechnen hier in Cent mit dem Vorzeichen des Geldkontos: negativ heißt, Geld geht ins Depot.
 
 const crypto = require("node:crypto");
-const { loadPrices } = require("./quotes");
+const { fetchQuotes, loadPrices, savePrices } = require("./quotes");
 
 /** Buchungsarten, bei denen Geld zwischen Geldkonto und Depot wechselt */
 const TRADE_BOOKING_TEXTS = ["BUY", "SELL", "PRIVATE_MARKET_BUY", "IPO_SUBSCRIPTION", "REDEMPTION", "EARLY_REDEMPTION"];
@@ -468,6 +468,16 @@ async function openPositions(db, accountId) {
   return portfolio((await loadMovements(db, accountId)).get(accountId) ?? []).positions;
 }
 
+/**
+ * Holt Kurse für die offenen Positionen eines Depots, speichert die gefundenen und liefert das Ergebnis je Position
+ * (siehe fetchQuotes). Gemeinsam für den Knopf und den täglichen Abruf.
+ */
+async function refreshDepot(db, accountId) {
+  const results = await fetchQuotes(await openPositions(db, accountId));
+  await savePrices(db, results.filter((r) => r.price));
+  return results;
+}
+
 module.exports = {
   TRADE_BOOKING_TEXTS,
   kindOf,
@@ -482,5 +492,5 @@ module.exports = {
   withDepotMonths,
   withDepotDays,
   depotView,
-  openPositions,
+  refreshDepot,
 };

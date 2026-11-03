@@ -17,8 +17,8 @@ const {
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
 const { KINDS: CATEGORY_KINDS, FALLBACK_CATEGORY, DEFAULT_CATEGORIES, readCategory } = require("./categories");
 const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
-const { withDepots, withDepotMonths, withDepotDays, depotView, openPositions } = require("./depot");
-const { fetchQuotes, savePrices } = require("./quotes");
+const { withDepots, withDepotMonths, withDepotDays, depotView, refreshDepot } = require("./depot");
+const { startSchedule, autoPriceState, setAutoPrices } = require("./schedule");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
 // als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
@@ -143,6 +143,17 @@ const SCHEMA = [
     fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (isin, date)
   )`,
+  // Täglicher Kursabruf (siehe schedule.js): eingeschaltet seit, leer: aus; und jeder Versuch mit seinem Ergebnis
+  "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS auto_prices_since TIMESTAMPTZ",
+  `CREATE TABLE IF NOT EXISTS auto_price_runs (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    due DATE NOT NULL,
+    ran_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated INTEGER NOT NULL,
+    failed JSONB NOT NULL DEFAULT '[]'
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_auto_price_runs ON auto_price_runs(account_id, due)",
 ];
 
 /**
@@ -385,7 +396,19 @@ app.get("/api/depots/:id", async (req, res) => {
   try {
     const { rowCount } = await pool.query("SELECT 1 FROM accounts WHERE id = $1", [id]);
     if (!rowCount) return res.status(404).json({ error: "Konto nicht gefunden" });
-    res.json(await depotView(pool, id, req.query.until));
+    res.json({ ...(await depotView(pool, id, req.query.until)), autoPrices: await autoPriceState(pool, id) });
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Schaltet den täglichen Kursabruf eines Depots ein oder aus: { "autoPrices": true }
+app.patch("/api/depots/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  const { autoPrices } = req.body || {};
+  if (typeof autoPrices !== "boolean") return res.status(400).json({ error: "autoPrices muss true oder false sein" });
+  try {
+    if (!(await setAutoPrices(pool, id, autoPrices))) return res.status(404).json({ error: "Konto nicht gefunden" });
+    res.json(await autoPriceState(pool, id));
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
@@ -396,9 +419,7 @@ app.post("/api/depots/:id/prices", async (req, res) => {
   try {
     const { rowCount } = await pool.query("SELECT 1 FROM accounts WHERE id = $1", [id]);
     if (!rowCount) return res.status(404).json({ error: "Konto nicht gefunden" });
-    const results = await fetchQuotes(await openPositions(pool, id));
-    await savePrices(pool, results.filter((r) => r.price));
-    res.json({ results });
+    res.json({ results: await refreshDepot(pool, id) });
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
@@ -494,5 +515,7 @@ app.get("/api/stats/days", async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
-init().then(() => app.listen(3000, () => console.log("API läuft auf :3000")))
-  .catch((e) => { console.error(e); process.exit(1); });
+init().then(() => app.listen(3000, () => {
+  console.log("API läuft auf :3000");
+  startSchedule(pool);
+})).catch((e) => { console.error(e); process.exit(1); });

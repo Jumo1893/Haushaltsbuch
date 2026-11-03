@@ -12,6 +12,14 @@ const monthShort = new Intl.DateTimeFormat("de-DE", { month: "short" });
 export const dayFormat = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit" });
 export const dateFormat = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 export const dateTimeFormat = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
+/** Termin mit Wochentag, z. B. "Mi., 04.11., 22:30" */
+export const slotFormat = new Intl.DateTimeFormat("de-DE", {
+  weekday: "short",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 export const percent = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 0 });
 
 /** Auf Cent gerundet und ohne −0, für Summen aus Gleitkommazahlen */

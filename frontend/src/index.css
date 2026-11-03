@@ -41,6 +41,7 @@ button{cursor:pointer}
 .delta{display:block;margin-top:4px;opacity:.85}
 .reconcile{display:block;margin-top:14px;font-size:.9rem;opacity:.75}
 .on-accent{margin-top:10px;background:none;border:1px solid currentColor;color:inherit;border-radius:8px;padding:7px 12px}
+.hero .check{color:inherit;font-size:.9rem}
 .split{display:flex;flex-wrap:wrap;gap:4px 24px;margin-top:12px;font-size:.95rem}
 .split b{font-weight:600}
 section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}

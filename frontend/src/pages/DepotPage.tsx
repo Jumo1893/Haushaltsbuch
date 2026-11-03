@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ApiError, deleteAccount, fetchDepot, refreshPrices, updateAccount } from "../api";
+import { useEffect, useState } from "react";
+import { ApiError, deleteAccount, fetchDepot, refreshPrices, switchAutoPrices, updateAccount } from "../api";
 import AccountDialog from "../components/AccountDialog";
 import AllocationBar from "../components/AllocationBar";
 import BookingsView from "../components/BookingsView";
@@ -21,6 +21,7 @@ import {
   parseMonth,
   signed,
   signedPercent,
+  slotFormat,
   today,
   ym,
 } from "../format";
@@ -32,6 +33,7 @@ import {
   type AccountChanges,
   type Depot,
   type DepotTotals,
+  type AutoPrices,
   type Position,
   type PriceResult,
 } from "../types";
@@ -93,6 +95,21 @@ function DepotKpis({ totals }: { totals: DepotTotals | null }) {
   );
 }
 
+/** Stand des täglichen Abrufs: letzter Versuch und nächster Termin */
+function autoStatus({ next, last }: AutoPrices) {
+  const upcoming = `Der nächste ist ${slotFormat.format(new Date(next))} Uhr.`;
+  if (!last) return `Noch kein automatischer Abruf. ${upcoming} Läuft die App dann nicht, holt sie ihn beim nächsten Start nach.`;
+  const when = dateTimeFormat.format(new Date(last.ranAt));
+  if (!last.updated && last.failed.length) {
+    return (
+      `Der letzte automatische Abruf ${when} bekam keinen Kurs (${last.failed[0].error}). Die App versucht es nach 30 ` +
+      `Minuten erneut, höchstens dreimal je Termin. ${upcoming}`
+    );
+  }
+  const missing = last.failed.length ? ` Nicht abrufbar: ${last.failed.map((f) => f.name).join(", ")}.` : "";
+  return `Zuletzt automatisch ${when}: ${last.updated} ${last.updated === 1 ? "Kurs" : "Kurse"}.${missing} ${upcoming}`;
+}
+
 interface HeroProps {
   account: Account;
   depot: Depot | undefined;
@@ -100,10 +117,14 @@ interface HeroProps {
   note: string;
   refreshing: boolean;
   onRefresh: () => void;
+  /** Täglicher Abruf, nach dem Umschalten der Stand vom Server */
+  auto: AutoPrices | undefined;
+  switching: boolean;
+  onAutoChange: (enabled: boolean) => void;
 }
 
 /** Depotwert, wie er zustande kommt und woher die Kurse stammen */
-function Hero({ account, depot, note, refreshing, onRefresh }: HeroProps) {
+function Hero({ account, depot, note, refreshing, onRefresh, auto, switching, onAutoChange }: HeroProps) {
   const totals = depot?.totals;
   const stake = totals ? totals.invested - totals.pending : 0;
   const stale = depot?.positions.filter(isStale).length ?? 0;
@@ -142,9 +163,23 @@ function Hero({ account, depot, note, refreshing, onRefresh }: HeroProps) {
         </span>
       )}
       {depot && depot.positions.length > 0 && (
-        <button className="on-accent" disabled={refreshing} onClick={onRefresh}>
-          {refreshing ? "Kurse werden abgerufen …" : "Kurse aktualisieren"}
-        </button>
+        <>
+          <button className="on-accent" disabled={refreshing} onClick={onRefresh}>
+            {refreshing ? "Kurse werden abgerufen …" : "Kurse aktualisieren"}
+          </button>
+          {auto && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={auto.enabled}
+                disabled={switching}
+                onChange={(e) => onAutoChange(e.target.checked)}
+              />
+              An Werktagen um 22:30 Uhr automatisch abrufen
+            </label>
+          )}
+          {auto?.enabled && <span className="reconcile">{autoStatus(auto)}</span>}
+        </>
       )}
     </div>
   );
@@ -163,6 +198,10 @@ export default function DepotPage({ account }: { account: Account }) {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [priceNote, setPriceNote] = useState("");
+  const [switching, setSwitching] = useState(false);
+  // Stand nach dem Umschalten, bis die Seite neu geladen ist; das Umschalten ändert sonst nichts am Depot
+  const [auto, setAuto] = useState<AutoPrices | null>(null);
+  useEffect(() => setAuto(null), [depot]);
 
   const cashAccount = accounts.find((a) => a.id === account.cashAccountId);
   const history = depot?.history ?? [];
@@ -185,6 +224,18 @@ export default function DepotPage({ account }: { account: Account }) {
       navigate(cashAccount ? `/konten/${cashAccount.id}` : "/");
     } catch (e) {
       setError(e instanceof ApiError && e.body?.error ? e.body.error : "Löschen fehlgeschlagen.");
+    }
+  };
+
+  const changeAutoPrices = async (enabled: boolean) => {
+    setSwitching(true);
+    setError("");
+    try {
+      setAuto(await switchAutoPrices(id, enabled));
+    } catch (e) {
+      setError(e instanceof ApiError && e.body?.error ? e.body.error : "Der tägliche Abruf ließ sich nicht umschalten.");
+    } finally {
+      setSwitching(false);
     }
   };
 
@@ -250,7 +301,16 @@ export default function DepotPage({ account }: { account: Account }) {
       )}
 
       <div className="grid top-row">
-        <Hero account={account} depot={depot} note={priceNote} refreshing={refreshing} onRefresh={updatePrices} />
+        <Hero
+          account={account}
+          depot={depot}
+          note={priceNote}
+          refreshing={refreshing}
+          onRefresh={updatePrices}
+          auto={auto ?? depot?.autoPrices}
+          switching={switching}
+          onAutoChange={changeAutoPrices}
+        />
         <DepotKpis totals={depot?.totals ?? null} />
       </div>
 

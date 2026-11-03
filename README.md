@@ -25,7 +25,7 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
   die Kategorie „Lebensmittel“ setzen (siehe „Oberfläche“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
 - Depot aus dem Trade-Republic-Export, getrennt vom Geldkonto: Bestände, Einstand, Gewinne, Erträge, Anlageklassen und
-  alle Bewegungen, auf Knopfdruck mit aktuellen Kursen (siehe „Depot“)
+  alle Bewegungen, mit aktuellen Kursen auf Knopfdruck oder an jedem Werktag (siehe „Depot“)
 - Kontostand mit der Bank abgleichen; Umbuchungen zwischen eigenen Konten zählen nicht als Einnahme oder Ausgabe
 - Monatsansicht mit Blättern zwischen den Monaten, Saldo sowie Summe der Einnahmen und Ausgaben im Monat
 - Ausgaben nach Kategorie als Balkendiagramm
@@ -141,7 +141,8 @@ Bank abgleichen, ein Import für das Konto starten und ein Konto ohne Buchungen 
 
 **Depot** (`/konten/ID`): Ein Depot mit Wertpapieren hat statt der Kontoseite eine eigene Seite (siehe „Depot“): Depotwert,
 Einstand, Gewinne, Erträge, Steuern und Gebühren, die Anteile der Anlageklassen, der Verlauf von Depotwert und Einstand
-und die Positionen je Anlageklasse mit Tag und Herkunft ihres Kurses. „Kurse aktualisieren“ holt aktuelle Kurse (siehe
+und die Positionen je Anlageklasse mit Tag und Herkunft ihres Kurses. „Kurse aktualisieren“ holt aktuelle Kurse, der
+Schalter darunter jeden Werktag um 22:30 Uhr (siehe
 „Bewertung“ unter „Depot“). Ein Klick auf eine Position zeigt ihre Bewegungen. Darunter stehen die geschlossenen
 Positionen und alle Bewegungen, nach Wertpapier filterbar.
 
@@ -315,13 +316,26 @@ Verkaufs oder Eingangs aus dem Export, bis „Kurse aktualisieren“ auf der Sei
 - **Private-Markets-Fonds** haben keine öffentlichen Kurse, nur einen Wert je Monat. Für sie gilt der Kurs aus dem Export;
   ein Sparplan kauft monatlich zu diesem Wert.
 
-Abgerufen wird nur auf Knopfdruck, ohne Konto und mit der Kennung „Haushaltsbuch“. Nach außen gehen nur die ISINs der
-offenen Positionen und die Krypto-Kürzel, nie Stückzahlen oder Beträge. Gespeichert wird ein Kurs je Wertpapier und Tag
+Abgerufen wird auf Knopfdruck oder täglich (siehe unten), ohne Konto und mit der Kennung „Haushaltsbuch“. Nach außen gehen
+nur die ISINs der offenen Positionen und die Krypto-Kürzel, nie Stückzahlen oder Beträge. Gespeichert wird ein Kurs je Wertpapier und Tag
 (Tabelle `depot_prices`), ein späterer Abruf am selben Tag ersetzt ihn. Jede Position nennt Tag und Herkunft ihres Kurses,
 die Seite nennt die Zahl der Positionen mit Kursen über 30 Tage und den Zeitpunkt des letzten Abrufs. Verlauf und
 Gesamtsaldo in der Übersicht beruhen auf denselben Kursen, je Monat mit dem bis dahin jüngsten. Ein abgerufener Kurs gilt
 ab seinem Tag, nach den Bewegungen dieses Tages; ein späterer Kauf oder Verkauf geht wieder vor. Ohne Abruf bleibt der
 Depotwert eine Schätzung und weicht vom Wert bei Trade Republic ab, je länger der letzte Kurs zurückliegt.
+
+**Täglicher Abruf:** Mit „An Werktagen um 22:30 Uhr automatisch abrufen“ auf der Seite des Depots holt das Backend die
+Kurse selbst, montags bis freitags um 22:30 Uhr deutscher Zeit, nach Handelsschluss bei Lang & Schwarz. Der Schalter
+steht zu Beginn auf aus und gilt je Depot; wer ihn nach 22:30 Uhr einschaltet, wartet auf den nächsten Termin.
+- **Nachholen:** Das Backend prüft alle fünf Minuten, ob ein Termin fällig ist. Lief es zum Termin nicht, etwa weil der
+  Rechner aus war oder schlief, holt es den Abruf beim nächsten Start oder nach dem Aufwachen nach. Für mehrere verpasste
+  Termine gibt es nur einen Abruf, denn die Quellen liefern nur aktuelle Kurse; im Verlauf fehlen diese Tage dann.
+- **Wiederholen:** Bekommt ein Abruf keinen einzigen Kurs, etwa ohne Netz, versucht es das Backend nach 30 Minuten erneut,
+  höchstens dreimal je Termin. Fehlen nur einzelne Kurse, bleibt es bei dem einen Abruf.
+- **Feiertage** kennt der Plan nicht. Ohne Handel liefern die Quellen den Kurs des letzten Handelstags, das ändert nichts.
+- **Anzeige:** Unter dem Schalter stehen Zeitpunkt und Ergebnis des letzten automatischen Abrufs, die Positionen ohne
+  Kurs und der nächste Termin. Jeder Versuch steht in der Tabelle `auto_price_runs`, das Log nennt nur die Anzahl der Kurse.
+- Der Knopf „Kurse aktualisieren“ bleibt und holt jederzeit frische Kurse.
 
 **Löschen:** „Depot löschen“ entfernt das Depot mit seinen Bewegungen, die Buchungen im Geldkonto bleiben. Ein neuer Import
 stellt es wieder her.
@@ -454,7 +468,8 @@ Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neu
 ## Tests
 Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
 Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
-Duplikaterkennung, Zuordnung zu Konten) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf)
+Duplikaterkennung, Zuordnung zu Konten) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf,
+Termine des täglichen Abrufs)
 laufen mit dem Test-Runner von Node.js 20+ und brauchen weder Datenbank noch Netz; die Antworten von Lang & Schwarz und
 Kraken sind nachgestellt:
 ```
@@ -474,6 +489,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
 │   ├── depot.js              Depot: Wertpapierbewegungen, Bestände, Einstand, Gewinne, Depotwert im Zeitverlauf
 │   ├── quotes.js             Aktuelle Kurse von Lang & Schwarz und Kraken abrufen und speichern
+│   ├── schedule.js           Täglicher Kursabruf: Termine, Nachholen, Wiederholen
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -554,6 +570,7 @@ Ein Eintrag je Konto.
 | `bank_balance` | `NUMERIC(12,2)` | Kontostand laut Bank am Ende des Tages `bank_balance_date`, optional (siehe „Kontostand abgleichen“) |
 | `bank_balance_date` | `DATE`   | Tag dieses Kontostands; gesetzt genau dann, wenn `bank_balance` gesetzt ist |
 | `cash_account_id` | `INTEGER`  | bei einem Depot: Verweis auf das Geldkonto, sonst leer |
+| `auto_prices_since` | `TIMESTAMPTZ` | täglicher Kursabruf eingeschaltet seit, leer: aus (siehe „Depot“) |
 
 ### Tabelle `depot_movements`
 Eine Zeile je Wertpapierbewegung eines Depots (siehe „Depot“). Beträge haben das Vorzeichen des Geldkontos: negativ geht
@@ -587,6 +604,18 @@ Wertpapier und bleiben, wenn ein Depot gelöscht wird.
 | `price`      | `NUMERIC(24,10)` | Kurs in Euro, bei Anleihen als Anteil vom Nennwert |
 | `source`     | `TEXT`           | `ls` (Lang & Schwarz) oder `kraken` |
 | `fetched_at` | `TIMESTAMPTZ`    | Zeitpunkt des Abrufs |
+
+### Tabelle `auto_price_runs`
+Ein Eintrag je Versuch des täglichen Kursabrufs (siehe „Depot“).
+
+| Spalte       | Typ           | Hinweis |
+|--------------|---------------|---------|
+| `id`         | `SERIAL`      | Primärschlüssel |
+| `account_id` | `INTEGER`     | Verweis auf `accounts.id`, das Depot. Wird es gelöscht, gehen seine Versuche mit |
+| `due`        | `DATE`        | Werktag des Termins, zu dem der Versuch gehört |
+| `ran_at`     | `TIMESTAMPTZ` | Zeitpunkt des Versuchs |
+| `updated`    | `INTEGER`     | Zahl der abgerufenen Kurse |
+| `failed`     | `JSONB`       | Positionen ohne Kurs: `[{ "name": "…", "error": "…" }]` |
 
 ### Tabelle `categories`
 Ein Eintrag je Kategorie und Art. Buchungen speichern den Namen der Kategorie in `transactions.category`.
@@ -649,6 +678,7 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `DELETE` | `/api/accounts/:id`                  | Konto löschen, `204`; enthält es noch Buchungen, `409`. Die Wertpapierbewegungen eines Depots gehen mit |
 | `GET`    | `/api/depots/:id?until=YYYY-MM`      | Bestand und Bewegungen eines Depots, Verlauf bis zum Monat `until` |
 | `POST`   | `/api/depots/:id/prices`             | Aktuelle Kurse für die offenen Positionen abrufen und speichern, liefert das Ergebnis je Position |
+| `PATCH`  | `/api/depots/:id`                    | Täglichen Kursabruf ein- oder ausschalten: `{ "autoPrices": true }`, liefert seinen neuen Stand |
 | `GET`    | `/api/categories`                    | Kategorien aller Arten, „Sonstiges“ jeweils zuletzt |
 | `POST`   | `/api/categories`                    | Kategorie anlegen, liefert sie mit `201` zurück |
 | `PATCH`  | `/api/categories/:id`                | Kategorie umbenennen, ihre Buchungen ändern sich mit; liefert die geänderte Kategorie |
@@ -700,8 +730,10 @@ Geldkonto, sonst `null`) sowie `firstDate` und `lastDate` (erster und letzter Ta
 `GET /api/depots/:id` liefert `totals` (`value`, `invested`, `pending`, `unrealized`, `realized`, `income`, `taxes`, `fees`,
 `received`, `result`), `positions` und `closed` (offene und geschlossene Positionen mit denselben Werten sowie `isin`,
 `name`, `assetClass`, `shares`, `price`, `priceDate`, `priceSource` und `lastDate`), `allocation` (`assetClass`, `value`,
-`share`), `history` (`month`, `value`, `invested` am Monatsanfang), `movements` (neueste zuerst) und `pricesFetchedAt`
-(Zeitpunkt des letzten Kursabrufs für dieses Depot, sonst `null`). `price`, `priceDate` und `priceSource` (`export`, `ls`
+`share`), `history` (`month`, `value`, `invested` am Monatsanfang), `movements` (neueste zuerst), `pricesFetchedAt`
+(Zeitpunkt des letzten Kursabrufs für dieses Depot, sonst `null`) und `autoPrices`, den Stand des täglichen Abrufs:
+`{ "enabled": true, "next": "2026-11-05T21:30:00.000Z", "last": { "ranAt": "…", "updated": 12, "failed": [] } }`, mit
+`last` `null`, solange es keinen Versuch gab. `price`, `priceDate` und `priceSource` (`export`, `ls`
 oder `kraken`) sind der jüngste bekannte Kurs, siehe „Depot“. Ohne Bewegungen sind die Listen leer, unbekanntes Konto:
 `404`.
 

@@ -1,6 +1,7 @@
 import type {
   Account,
   AccountChanges,
+  AutoPrices,
   BulkChanges,
   Category,
   DayBalance,
@@ -114,6 +115,14 @@ export const fetchDepot = (id: number, until: string) =>
 /** Holt aktuelle Kurse für die offenen Positionen eines Depots bei Lang & Schwarz und Kraken und speichert sie */
 export const refreshPrices = (id: number) =>
   request<{ results: PriceResult[] }>(`depots/${id}/prices`, { method: "POST" });
+
+/** Schaltet den täglichen Kursabruf eines Depots ein oder aus und liefert seinen neuen Stand */
+export const switchAutoPrices = (id: number, enabled: boolean) =>
+  request<AutoPrices>(`depots/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ autoPrices: enabled }),
+  });
 
 export const fetchCategories = () => request<Category[]>("categories");
 
