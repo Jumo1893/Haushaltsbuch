@@ -1,5 +1,5 @@
-import { dateFormat, money, parseDate, quote, shareCount, signed, signedPercent } from "../format";
-import { assetClassLabel, assetClassRank, type Position } from "../types";
+import { dateFormat, money, parseDate, priceText, shareCount, signed, signedPercent } from "../format";
+import { PRICE_SOURCES, assetClassLabel, assetClassRank, type Position } from "../types";
 
 interface Props {
   positions: Position[];
@@ -7,11 +7,12 @@ interface Props {
   onSelect: (isin: string) => void;
 }
 
-/** Stückzahl und Kurs einer offenen Position, mit dem Tag, von dem der Kurs stammt */
+/** Stückzahl und Kurs einer offenen Position, mit Tag und Herkunft des Kurses */
 function holding(p: Position) {
   const shares = `${shareCount.format(p.shares)} Stück`;
   if (p.price === null || !p.priceDate) return shares;
-  return `${shares} · Kurs ${quote(p.price)} vom ${dateFormat.format(parseDate(p.priceDate))}`;
+  const source = p.priceSource ? `, ${PRICE_SOURCES[p.priceSource]}` : "";
+  return `${shares} · Kurs ${priceText(p.price, p.assetClass)} vom ${dateFormat.format(parseDate(p.priceDate))}${source}`;
 }
 
 function Row({ position: p, onSelect }: { position: Position; onSelect: Props["onSelect"] }) {

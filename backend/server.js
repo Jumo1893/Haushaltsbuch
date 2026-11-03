@@ -17,7 +17,8 @@ const {
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
 const { KINDS: CATEGORY_KINDS, FALLBACK_CATEGORY, DEFAULT_CATEGORIES, readCategory } = require("./categories");
 const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
-const { withDepots, withDepotMonths, withDepotDays, depotView } = require("./depot");
+const { withDepots, withDepotMonths, withDepotDays, depotView, openPositions } = require("./depot");
+const { fetchQuotes, savePrices } = require("./quotes");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
 // als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
@@ -133,6 +134,15 @@ const SCHEMA = [
   )`,
   "CREATE INDEX IF NOT EXISTS idx_movements_account ON depot_movements(account_id, date)",
   "CREATE INDEX IF NOT EXISTS idx_movements_hash ON depot_movements(import_hash)",
+  // Abgerufene Kurse, einer je Wertpapier und Tag, siehe quotes.js
+  `CREATE TABLE IF NOT EXISTS depot_prices (
+    isin TEXT NOT NULL,
+    date DATE NOT NULL,
+    price NUMERIC(24,10) NOT NULL CHECK (price > 0),
+    source TEXT NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (isin, date)
+  )`,
 ];
 
 /**
@@ -376,6 +386,19 @@ app.get("/api/depots/:id", async (req, res) => {
     const { rowCount } = await pool.query("SELECT 1 FROM accounts WHERE id = $1", [id]);
     if (!rowCount) return res.status(404).json({ error: "Konto nicht gefunden" });
     res.json(await depotView(pool, id, req.query.until));
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Holt aktuelle Kurse für die offenen Positionen eines Depots und speichert sie; liefert das Ergebnis je Position
+app.post("/api/depots/:id/prices", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  try {
+    const { rowCount } = await pool.query("SELECT 1 FROM accounts WHERE id = $1", [id]);
+    if (!rowCount) return res.status(404).json({ error: "Konto nicht gefunden" });
+    const results = await fetchQuotes(await openPositions(pool, id));
+    await savePrices(pool, results.filter((r) => r.price));
+    res.json({ results });
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 

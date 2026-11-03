@@ -270,6 +270,40 @@ test("Der Depotwert im Zeitverlauf nutzt den bis dahin bekannten Kurs", () => {
   assert.deepEqual([...flowsByMonth(list)], [["2026-01", 2000], ["2026-02", 1600], ["2026-03", -6000]]);
 });
 
+test("Abgerufene Kurse bewerten ab ihrem Tag, ein späterer Kauf geht wieder vor", () => {
+  const list = [
+    move("2026-01-10", "TRADING", "BUY", "A", 2, 10, -2000),
+    move("2026-03-10", "TRADING", "BUY", "A", 1, 16, -1600),
+  ];
+  const prices = [
+    { isin: "A", date: "2026-02-01", price: 12, source: "ls" },
+    { isin: "B", date: "2026-02-01", price: 99, source: "ls" },
+  ];
+  assert.deepEqual(standAt(list, ["2026-02-01", "2026-02-02", "2026-03-11"], prices).map((s) => s.value), [20, 24, 48]);
+  const [bought] = portfolio(list, prices).positions;
+  assert.deepEqual([bought.price, bought.priceDate, bought.priceSource], [16, "2026-03-10", "export"]);
+
+  const [quoted] = portfolio(list, [...prices, { isin: "A", date: "2026-04-01", price: 20, source: "ls" }]).positions;
+  assert.deepEqual([quoted.price, quoted.priceDate, quoted.priceSource, quoted.value], [20, "2026-04-01", "ls", 60]);
+  assert.equal(portfolio(list, prices).positions.length, 1, "ein Kurs allein macht keine Position");
+});
+
+test("Ein abgerufener Kurs vom Tag einer Bewegung gilt nach ihr", () => {
+  const [p] = portfolio([move("2026-01-10", "TRADING", "BUY", "A", 2, 10, -2000)], [
+    { isin: "A", date: "2026-01-10", price: 11, source: "ls" },
+  ]).positions;
+  assert.deepEqual([p.price, p.priceSource, p.value], [11, "ls", 22]);
+});
+
+test("Nach einem Split rechnet ein vorher abgerufener Kurs auf die neue Stückzahl um", () => {
+  const list = [
+    move("2026-01-10", "TRADING", "BUY", "A", 1, 100, -10000),
+    move("2026-02-01", "CORPORATE_ACTION", "SPLIT", "A", 1, null),
+  ];
+  const [p] = portfolio(list, [{ isin: "A", date: "2026-01-15", price: 120, source: "ls" }]).positions;
+  assert.deepEqual([p.shares, p.price, p.value, p.priceDate], [2, 60, 120, "2026-01-15"]);
+});
+
 test("Der Verlauf reicht bis zur letzten Bewegung, auch wenn sie nach until liegt", () => {
   const list = [move("2026-01-10", "TRADING", "BUY", "A", 2, 10, -2000), move("2026-03-10", "TRADING", "BUY", "A", 1, 10, -1000)];
   assert.deepEqual(monthlyHistory(list, "2026-02").map((h) => h.month), ["2026-01", "2026-02", "2026-03"]);

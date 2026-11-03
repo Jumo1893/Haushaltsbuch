@@ -114,14 +114,24 @@ export interface DepotTotals {
   result: number; // beide Gewinne und Erträge, nach Steuern
 }
 
+/** Herkunft eines Kurses: der Export oder ein Abruf bei Lang & Schwarz bzw. Kraken */
+export type PriceSource = "export" | "ls" | "kraken";
+
+export const PRICE_SOURCES: Record<PriceSource, string> = {
+  export: "Export",
+  ls: "Lang & Schwarz",
+  kraken: "Kraken",
+};
+
 /** Ein Wertpapier im Depot */
 export interface Position {
   isin: string; // bei Krypto das Kürzel
   name: string;
   assetClass: string;
   shares: number;
-  price: number | null; // letzter bekannter Kurs
+  price: number | null; // letzter bekannter Kurs, bei Anleihen als Anteil vom Nennwert (0,98 = 98 %)
   priceDate: string | null; // YYYY-MM-DD
+  priceSource: PriceSource | null;
   lastDate: string; // letzte Bewegung
   invested: number;
   pending: number;
@@ -154,6 +164,7 @@ export interface DepotMovement {
   kind: "buy" | "sell" | "split" | "prepayment" | "proceeds" | "reward" | "income";
   isin: string;
   name: string;
+  assetClass: string;
   shares: number | null;
   price: number | null;
   amount: number; // aus Sicht des Geldkontos: negativ geht Geld ins Depot
@@ -168,6 +179,17 @@ export interface Depot {
   allocation: DepotAllocation[];
   history: DepotMonth[];
   movements: DepotMovement[]; // neueste zuerst
+  pricesFetchedAt: string | null; // ISO-Zeitstempel des letzten Kursabrufs, null: noch nie
+}
+
+/** Ergebnis des Kursabrufs für eine Position; ohne Quelle (Private Markets) fehlen Kurs und Fehler */
+export interface PriceResult {
+  isin: string;
+  name: string;
+  source: Exclude<PriceSource, "export"> | null;
+  price?: number;
+  date?: string; // YYYY-MM-DD
+  error?: string;
 }
 
 /** Ein bisheriger Import */

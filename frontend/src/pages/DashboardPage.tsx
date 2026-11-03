@@ -198,7 +198,9 @@ export default function DashboardPage() {
                 </>
               )}
               {depots !== 0 && (
-                <p className="hint">Depots zählen mit dem letzten Kurs aus dem Export, nicht mit aktuellen Börsenkursen.</p>
+                <p className="hint">
+                  Depots zählen mit dem letzten bekannten Kurs: aus dem Export oder auf der Seite des Depots abgerufen.
+                </p>
               )}
             </section>
             <section>

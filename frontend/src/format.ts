@@ -44,6 +44,12 @@ const smallQuote = new Intl.NumberFormat("de-DE", {
 /** Kurs, unter 10 € mit bis zu vier Nachkommastellen, z. B. "0,8881 €" */
 export const quote = (x: number) => (Math.abs(x) < 10 ? smallQuote : eur).format(x);
 
+const bondQuote = new Intl.NumberFormat("de-DE", { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Kurs eines Wertpapiers; Anleihen notieren als Anteil vom Nennwert, z. B. "88,81 %" */
+export const priceText = (price: number, assetClass: string) =>
+  assetClass === "BOND" ? bondQuote.format(price) : quote(price);
+
 /** Datum (YYYY-MM-DD) als lokales Date-Objekt */
 export const parseDate = (date: string) => new Date(`${date}T00:00:00`);
 

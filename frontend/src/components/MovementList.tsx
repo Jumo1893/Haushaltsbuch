@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { dateFormat, money, movements as countMovements, parseDate, quote, roundCents, shareCount, signed } from "../format";
+import { dateFormat, money, movements as countMovements, parseDate, priceText, roundCents, shareCount, signed } from "../format";
 import { movementLabel, type DepotMovement, type Position } from "../types";
 
 /** So viele Bewegungen zeigt die Liste auf einmal */
@@ -24,7 +24,9 @@ function Effect({ movement: m }: { movement: DepotMovement }) {
 /** Zweite Zeile: Tag, Stückzahl und Kurs sowie Gebühr und Steuer, soweit es sie gibt */
 function info(m: DepotMovement) {
   const parts = [dateFormat.format(parseDate(m.date))];
-  if (m.shares && m.price !== null) parts.push(`${shareCount.format(Math.abs(m.shares))} Stück zu ${quote(m.price)}`);
+  if (m.shares && m.price !== null) {
+    parts.push(`${shareCount.format(Math.abs(m.shares))} Stück zu ${priceText(m.price, m.assetClass)}`);
+  }
   else if (m.shares && m.kind === "income") parts.push(`${shareCount.format(m.shares)} Stück`);
   if (m.fee) parts.push(`Gebühr ${money(Math.abs(m.fee))}`);
   if (m.tax) parts.push(`Steuer ${money(Math.abs(m.tax))}${m.tax > 0 ? " erstattet" : ""}`);

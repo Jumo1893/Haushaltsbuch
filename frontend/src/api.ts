@@ -13,6 +13,7 @@ import type {
   NewAccount,
   NewCategory,
   NewTransaction,
+  PriceResult,
   ProfileMismatch,
   Transaction,
   TransactionChanges,
@@ -109,6 +110,10 @@ export const deleteAccount = (id: number) => request<null>(`accounts/${id}`, { m
 /** Bestand, Verlauf bis zum Monat until (YYYY-MM) und Bewegungen eines Depots */
 export const fetchDepot = (id: number, until: string) =>
   request<Depot>(`depots/${id}?until=${encodeURIComponent(until)}`);
+
+/** Holt aktuelle Kurse für die offenen Positionen eines Depots bei Lang & Schwarz und Kraken und speichert sie */
+export const refreshPrices = (id: number) =>
+  request<{ results: PriceResult[] }>(`depots/${id}/prices`, { method: "POST" });
 
 export const fetchCategories = () => request<Category[]>("categories");
 

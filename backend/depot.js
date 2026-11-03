@@ -1,10 +1,12 @@
 // Depot: Wertpapierbewegungen aus dem Import und was daraus folgt: Bestände, Einstand, Gewinne und der Depotwert im
-// Zeitverlauf. Bestände werden nicht gespeichert, sondern bei jeder Abfrage aus den Bewegungen berechnet.
+// Zeitverlauf. Bestände werden nicht gespeichert, sondern bei jeder Abfrage aus den Bewegungen berechnet. Bewertet wird
+// mit dem jüngsten Kurs aus den Bewegungen oder den abgerufenen Kursen (quotes.js).
 // Das Geld bleibt im Geldkonto, dort sind Käufe und Verkäufe Umbuchungen (TRADE_BOOKING_TEXTS).
 //
 // Beträge rechnen hier in Cent mit dem Vorzeichen des Geldkontos: negativ heißt, Geld geht ins Depot.
 
 const crypto = require("node:crypto");
+const { loadPrices } = require("./quotes");
 
 /** Buchungsarten, bei denen Geld zwischen Geldkonto und Depot wechselt */
 const TRADE_BOOKING_TEXTS = ["BUY", "SELL", "PRIVATE_MARKET_BUY", "IPO_SUBSCRIPTION", "REDEMPTION", "EARLY_REDEMPTION"];
@@ -66,11 +68,12 @@ function readMovement(record) {
 }
 
 /**
- * Bereitet Bewegungen für den Durchlauf auf. Wechselt ein Wertpapier die ISIN, steht das im Export als zwei Zeilen
- * desselben Tages und derselben Art: die alte ISIN mit negativer, die neue mit positiver Stückzahl. Sie werden hier zu
- * einem Umtausch (into).
+ * Bereitet Bewegungen und abgerufene Kurse (siehe quotes.js) für den Durchlauf auf. Wechselt ein Wertpapier die ISIN,
+ * steht das im Export als zwei Zeilen desselben Tages und derselben Art: die alte ISIN mit negativer, die neue mit
+ * positiver Stückzahl. Sie werden hier zu einem Umtausch (into). Ein abgerufener Kurs gilt ab seinem Tag, nach den
+ * Bewegungen dieses Tages.
  */
-function toEvents(movements) {
+function toEvents(movements, prices = []) {
   const actions = movements.filter((m) => m.section === CORPORATE_SECTION && m.shares);
   const replacements = new Map();
   const taken = new Set();
@@ -82,7 +85,11 @@ function toEvents(movements) {
     replacements.set(out, into);
     taken.add(into);
   }
-  return movements.filter((m) => !taken.has(m)).map((m) => ({ date: m.date, movement: m, into: replacements.get(m) }));
+  const events = movements.filter((m) => !taken.has(m)).map((m) => ({ date: m.date, movement: m, into: replacements.get(m) }));
+  if (!prices.length) return events;
+  // Die Sortierung ist stabil, Bewegungen eines Tages behalten ihre Reihenfolge
+  return [...events, ...prices.map((quote) => ({ date: quote.date, quote }))]
+    .sort((a, b) => a.date.localeCompare(b.date) || !!a.quote - !!b.quote);
 }
 
 function positionOf(positions, { isin, name, assetClass, date }) {
@@ -100,6 +107,7 @@ function positionOf(positions, { isin, name, assetClass, date }) {
     received: 0, // ohne Geldfluss eingebucht, zum Kurs des Tages
     price: null,
     priceDate: null,
+    priceSource: null, // "export" oder die Quelle eines abgerufenen Kurses
     lastDate: date,
   };
   positions.set(isin, position);
@@ -147,12 +155,18 @@ function convert(from, to, out, into) {
   if (from.price !== null) {
     to.price = (from.price * -out.shares) / into.shares;
     to.priceDate = from.priceDate;
+    to.priceSource = from.priceSource;
   }
   from.shares = Math.max(tidy(from.shares + out.shares), 0);
   from.cost = from.shares ? from.cost - moved : 0;
 }
 
-function apply(positions, { movement: m, into }) {
+function apply(positions, { movement: m, into, quote }) {
+  if (quote) {
+    const p = positions.get(quote.isin);
+    if (p) Object.assign(p, { price: quote.price, priceDate: quote.date, priceSource: quote.source });
+    return;
+  }
   const p = positionOf(positions, m);
   p.fees -= m.fee;
   p.taxes -= m.tax;
@@ -170,6 +184,7 @@ function apply(positions, { movement: m, into }) {
   if (m.section !== CASH_SECTION && m.price !== null) {
     p.price = m.price;
     p.priceDate = m.date;
+    p.priceSource = "export";
   }
 }
 
@@ -185,6 +200,7 @@ function positionView(p) {
     shares: p.shares,
     price: p.price,
     priceDate: p.priceDate,
+    priceSource: p.priceSource,
     lastDate: p.lastDate,
     invested: euros(p.cost + p.pending),
     pending: euros(p.pending),
@@ -200,11 +216,12 @@ function positionView(p) {
 
 /**
  * Bestand des Depots nach allen Bewegungen (nach Zeit sortiert): offene und geschlossene Positionen, Anlageklassen und
- * Summen, alle Beträge in Euro. Bewertet wird mit dem letzten Kurs aus den Bewegungen, andere Kurse kennt die App nicht.
+ * Summen, alle Beträge in Euro. Bewertet wird mit dem jüngsten Kurs aus den Bewegungen oder aus `prices`, den
+ * abgerufenen Kursen (nach Tag sortiert, siehe quotes.js).
  */
-function portfolio(movements) {
+function portfolio(movements, prices = []) {
   const positions = new Map();
-  for (const event of toEvents(movements)) apply(positions, event);
+  for (const event of toEvents(movements, prices)) apply(positions, event);
   const all = [...positions.values()];
   const sum = (pick) => all.reduce((total, p) => total + pick(p), 0);
   const value = euros(sum((p) => marketValue(p) + p.pending));
@@ -244,10 +261,10 @@ function portfolio(movements) {
 
 /**
  * Wert und Einstand des Depots an aufsteigenden Tagen (YYYY-MM-DD), jeweils vor allen Bewegungen des Tages.
- * Bewertet wird mit dem letzten Kurs, der bis dahin bekannt war.
+ * Bewertet wird mit dem letzten Kurs, der bis dahin bekannt war, aus den Bewegungen oder aus `prices`.
  */
-function standAt(movements, days) {
-  const events = toEvents(movements);
+function standAt(movements, days, prices = []) {
+  const events = toEvents(movements, prices);
   const positions = new Map();
   let next = 0;
   return days.map((day) => {
@@ -286,10 +303,10 @@ const monthsOf = (movements, until) =>
   monthRange(movements[0].date.slice(0, 7), later(until, movements[movements.length - 1].date.slice(0, 7)));
 
 /** Wert und Einstand je Monat am Monatsanfang, für den Verlauf des Depots */
-function monthlyHistory(movements, until) {
+function monthlyHistory(movements, until, prices = []) {
   if (!movements.length) return [];
   const months = monthsOf(movements, until);
-  const stands = standAt(movements, months.map((month) => `${month}-01`));
+  const stands = standAt(movements, months.map((month) => `${month}-01`), prices);
   return months.map((month, i) => ({ month, ...stands[i] }));
 }
 
@@ -342,9 +359,15 @@ async function depotOf(db, account) {
   return { ...created, isNew: true };
 }
 
+/** Bewegungen je Konto (siehe loadMovements) und, wenn es welche gibt, die abgerufenen Kurse */
+async function loadDepots(db, accountId = null) {
+  const byAccount = await loadMovements(db, accountId);
+  return { byAccount, prices: byAccount.size ? await loadPrices(db) : [] };
+}
+
 /** Konten mit Depot: Der Wert der Wertpapiere zählt zum Kontostand, die Bewegungen zu erstem und letztem Tag */
 async function withDepots(db, accounts) {
-  const byAccount = await loadMovements(db, accounts.length === 1 ? accounts[0].id : null);
+  const { byAccount, prices } = await loadDepots(db, accounts.length === 1 ? accounts[0].id : null);
   return accounts.map((account) => {
     const movements = byAccount.get(account.id) ?? [];
     if (!movements.length) return { ...account, movementCount: 0 };
@@ -352,7 +375,7 @@ async function withDepots(db, accounts) {
     const last = movements[movements.length - 1].date;
     return {
       ...account,
-      balance: euros((account.balance + portfolio(movements).totals.value) * 100),
+      balance: euros((account.balance + portfolio(movements, prices).totals.value) * 100),
       movementCount: movements.length,
       firstDate: account.firstDate && account.firstDate < first ? account.firstDate : first,
       lastDate: later(account.lastDate ?? "", last),
@@ -380,9 +403,10 @@ function mergeRows(rows, extra, point) {
  */
 async function withDepotMonths(db, rows, until, accountId = null) {
   const extra = [];
-  for (const [id, movements] of await loadMovements(db, accountId)) {
+  const { byAccount, prices } = await loadDepots(db, accountId);
+  for (const [id, movements] of byAccount) {
     const flows = flowsByMonth(movements);
-    extra.push(...monthlyHistory(movements, until).map(({ month, value }) => ({
+    extra.push(...monthlyHistory(movements, until, prices).map(({ month, value }) => ({
       month,
       accountId: id,
       income: 0,
@@ -397,9 +421,10 @@ async function withDepotMonths(db, rows, until, accountId = null) {
 /** Ergänzt den Kontostand je Tag (siehe dailyBalances) um den Depotwert am Tagesende, frühestens ab der ersten Bewegung */
 async function withDepotDays(db, rows, from, until, accountId = null) {
   const extra = [];
-  for (const [id, movements] of await loadMovements(db, accountId)) {
+  const { byAccount, prices } = await loadDepots(db, accountId);
+  for (const [id, movements] of byAccount) {
     const days = dayRange(later(from, movements[0].date), until);
-    const stands = standAt(movements, days.map((day) => addDays(day, 1)));
+    const stands = standAt(movements, days.map((day) => addDays(day, 1)), prices);
     extra.push(...days.map((date, i) => ({ date, accountId: id, balance: stands[i].value })));
   }
   return mergeRows(rows, extra, "date");
@@ -413,6 +438,7 @@ const movementView = (m) => ({
   kind: kindOf(m),
   isin: m.isin,
   name: m.name,
+  assetClass: m.assetClass,
   shares: m.shares,
   price: m.price,
   amount: euros(m.amount),
@@ -420,14 +446,26 @@ const movementView = (m) => ({
   tax: euros(m.tax),
 });
 
-/** Alles für die Seite eines Depots: Bestand, Verlauf bis zum Monat `until` und Bewegungen, neueste zuerst */
+/**
+ * Alles für die Seite eines Depots: Bestand, Verlauf bis zum Monat `until`, Bewegungen (neueste zuerst) und der
+ * Zeitpunkt, zu dem zuletzt Kurse für seine Wertpapiere abgerufen wurden (null: noch nie)
+ */
 async function depotView(db, accountId, until) {
-  const movements = (await loadMovements(db, accountId)).get(accountId) ?? [];
+  const { byAccount, prices } = await loadDepots(db, accountId);
+  const movements = byAccount.get(accountId) ?? [];
+  const isins = new Set(movements.map((m) => m.isin));
+  const fetched = prices.filter((q) => isins.has(q.isin)).map((q) => q.fetchedAt.getTime());
   return {
-    ...portfolio(movements),
-    history: monthlyHistory(movements, until),
+    ...portfolio(movements, prices),
+    history: monthlyHistory(movements, until, prices),
     movements: movements.map(movementView).reverse(),
+    pricesFetchedAt: fetched.length ? new Date(Math.max(...fetched)).toISOString() : null,
   };
+}
+
+/** Offene Positionen eines Depots, für den Abruf ihrer Kurse */
+async function openPositions(db, accountId) {
+  return portfolio((await loadMovements(db, accountId)).get(accountId) ?? []).positions;
 }
 
 module.exports = {
@@ -444,4 +482,5 @@ module.exports = {
   withDepotMonths,
   withDepotDays,
   depotView,
+  openPositions,
 };

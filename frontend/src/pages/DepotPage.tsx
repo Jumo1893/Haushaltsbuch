@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError, deleteAccount, fetchDepot, updateAccount } from "../api";
+import { ApiError, deleteAccount, fetchDepot, refreshPrices, updateAccount } from "../api";
 import AccountDialog from "../components/AccountDialog";
 import AllocationBar from "../components/AllocationBar";
 import BookingsView from "../components/BookingsView";
@@ -13,6 +13,7 @@ import { OFFLINE, useData, useLoad } from "../data";
 import {
   addMonths,
   dateFormat,
+  dateTimeFormat,
   daysBetween,
   money,
   movements,
@@ -25,7 +26,15 @@ import {
 } from "../format";
 import { Link, navigate, useMonthParam } from "../router";
 import { RANGES } from "../stats";
-import { kindLabel, type Account, type AccountChanges, type Depot, type DepotTotals, type Position } from "../types";
+import {
+  kindLabel,
+  type Account,
+  type AccountChanges,
+  type Depot,
+  type DepotTotals,
+  type Position,
+  type PriceResult,
+} from "../types";
 
 /** Ab so vielen Tagen gilt ein Kurs als alt */
 const STALE_DAYS = 30;
@@ -37,6 +46,17 @@ const VALUE_COLOR = "var(--ink)";
 const INVESTED_COLOR = "var(--muted)";
 
 const isStale = (p: Position) => p.priceDate !== null && daysBetween(p.priceDate, today()) > STALE_DAYS;
+
+/** Was der Kursabruf gebracht hat, in einem Satz je Ergebnis */
+function priceSummary(results: PriceResult[]) {
+  const updated = results.filter((r) => r.price !== undefined).length;
+  const without = results.filter((r) => r.source === null).length;
+  const failed = results.filter((r) => r.error);
+  const parts = [`${updated} ${updated === 1 ? "Kurs" : "Kurse"} aktualisiert.`];
+  if (without) parts.push(`Keine öffentlichen Kurse für ${without} Private-Markets-Fonds, dort gilt der Export.`);
+  if (failed.length) parts.push(`Nicht abrufbar: ${failed.map((r) => `${r.name} (${r.error})`).join(", ")}.`);
+  return parts.join(" ");
+}
 
 function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
@@ -73,8 +93,17 @@ function DepotKpis({ totals }: { totals: DepotTotals | null }) {
   );
 }
 
-/** Depotwert und wie er zustande kommt */
-function Hero({ account, depot }: { account: Account; depot: Depot | undefined }) {
+interface HeroProps {
+  account: Account;
+  depot: Depot | undefined;
+  /** Ergebnis des letzten Kursabrufs auf dieser Seite */
+  note: string;
+  refreshing: boolean;
+  onRefresh: () => void;
+}
+
+/** Depotwert, wie er zustande kommt und woher die Kurse stammen */
+function Hero({ account, depot, note, refreshing, onRefresh }: HeroProps) {
   const totals = depot?.totals;
   const stake = totals ? totals.invested - totals.pending : 0;
   const stale = depot?.positions.filter(isStale).length ?? 0;
@@ -94,14 +123,28 @@ function Hero({ account, depot }: { account: Account; depot: Depot | undefined }
           {dateFormat.format(parseDate(account.lastDate))}
         </span>
       )}
-      {depot && (
-        <span className="reconcile">
-          Bewertet mit dem letzten Kurs aus dem Export, nicht mit aktuellen Börsenkursen.
-          {stale > 0 && ` Bei ${stale} von ${depot.positions.length} Positionen ist er älter als ${STALE_DAYS} Tage.`}
-        </span>
-      )}
       {totals && totals.pending > 0 && (
         <span className="reconcile">Darin {money(totals.pending)} in Abwicklung: bezahlt, aber noch keine Anteile gebucht.</span>
+      )}
+      {depot && (
+        <span className="reconcile">
+          {depot.pricesFetchedAt
+            ? `Kurse von Lang & Schwarz und Kraken, zuletzt abgerufen ${dateTimeFormat.format(new Date(depot.pricesFetchedAt))}. ` +
+              "Ohne abgerufenen Kurs gilt der letzte aus dem Export."
+            : "Bewertet mit dem letzten Kurs aus dem Export. Aktuelle Kurse holt „Kurse aktualisieren“ bei Lang & Schwarz " +
+              "und Kraken; dorthin gehen nur die ISINs und Krypto-Kürzel, keine Stückzahlen oder Beträge."}
+          {stale > 0 && ` Bei ${stale} von ${depot.positions.length} Positionen ist der Kurs älter als ${STALE_DAYS} Tage.`}
+        </span>
+      )}
+      {note && (
+        <span className="reconcile" role="status">
+          {note}
+        </span>
+      )}
+      {depot && depot.positions.length > 0 && (
+        <button className="on-accent" disabled={refreshing} onClick={onRefresh}>
+          {refreshing ? "Kurse werden abgerufen …" : "Kurse aktualisieren"}
+        </button>
       )}
     </div>
   );
@@ -118,6 +161,8 @@ export default function DepotPage({ account }: { account: Account }) {
   const [range, setRange] = useState(0);
   const [isin, setIsin] = useState("");
   const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [priceNote, setPriceNote] = useState("");
 
   const cashAccount = accounts.find((a) => a.id === account.cashAccountId);
   const history = depot?.history ?? [];
@@ -140,6 +185,21 @@ export default function DepotPage({ account }: { account: Account }) {
       navigate(cashAccount ? `/konten/${cashAccount.id}` : "/");
     } catch (e) {
       setError(e instanceof ApiError && e.body?.error ? e.body.error : "Löschen fehlgeschlagen.");
+    }
+  };
+
+  const updatePrices = async () => {
+    setRefreshing(true);
+    setError("");
+    setPriceNote("");
+    try {
+      const { results } = await refreshPrices(id);
+      setPriceNote(priceSummary(results));
+      refresh();
+    } catch (e) {
+      setError(e instanceof ApiError && e.body?.error ? e.body.error : "Die Kurse konnten nicht abgerufen werden.");
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -190,7 +250,7 @@ export default function DepotPage({ account }: { account: Account }) {
       )}
 
       <div className="grid top-row">
-        <Hero account={account} depot={depot} />
+        <Hero account={account} depot={depot} note={priceNote} refreshing={refreshing} onRefresh={updatePrices} />
         <DepotKpis totals={depot?.totals ?? null} />
       </div>
 
@@ -226,8 +286,8 @@ export default function DepotPage({ account }: { account: Account }) {
               ]}
             />
             <p className="hint">
-              Jeder Monat ist mit den Kursen bewertet, die bis dahin aus eigenen Käufen, Verkäufen und Eingängen bekannt
-              waren. Der Verlauf zeigt daher nicht jede Bewegung am Markt.
+              Jeder Monat ist mit den Kursen bewertet, die bis dahin bekannt waren: aus eigenen Käufen, Verkäufen und
+              Eingängen und aus abgerufenen Kursen. Der Verlauf zeigt daher nicht jede Bewegung am Markt.
             </p>
           </section>
         </>

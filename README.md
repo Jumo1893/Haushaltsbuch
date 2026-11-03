@@ -25,7 +25,7 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
   die Kategorie „Lebensmittel“ setzen (siehe „Oberfläche“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
 - Depot aus dem Trade-Republic-Export, getrennt vom Geldkonto: Bestände, Einstand, Gewinne, Erträge, Anlageklassen und
-  alle Bewegungen (siehe „Depot“)
+  alle Bewegungen, auf Knopfdruck mit aktuellen Kursen (siehe „Depot“)
 - Kontostand mit der Bank abgleichen; Umbuchungen zwischen eigenen Konten zählen nicht als Einnahme oder Ausgabe
 - Monatsansicht mit Blättern zwischen den Monaten, Saldo sowie Summe der Einnahmen und Ausgaben im Monat
 - Ausgaben nach Kategorie als Balkendiagramm
@@ -141,7 +141,8 @@ Bank abgleichen, ein Import für das Konto starten und ein Konto ohne Buchungen 
 
 **Depot** (`/konten/ID`): Ein Depot mit Wertpapieren hat statt der Kontoseite eine eigene Seite (siehe „Depot“): Depotwert,
 Einstand, Gewinne, Erträge, Steuern und Gebühren, die Anteile der Anlageklassen, der Verlauf von Depotwert und Einstand
-und die Positionen je Anlageklasse. Ein Klick auf eine Position zeigt ihre Bewegungen. Darunter stehen die geschlossenen
+und die Positionen je Anlageklasse mit Tag und Herkunft ihres Kurses. „Kurse aktualisieren“ holt aktuelle Kurse (siehe
+„Bewertung“ unter „Depot“). Ein Klick auf eine Position zeigt ihre Bewegungen. Darunter stehen die geschlossenen
 Positionen und alle Bewegungen, nach Wertpapier filterbar.
 
 **Buchungen** (`/buchungen`): alle Buchungen eines Monats über alle Konten, mit Saldo und Ausgaben nach Kategorie.
@@ -302,11 +303,25 @@ Zeilen ohne Wertpapier (Karte, Überweisungen, Zinsen aufs Guthaben, `TAX_OPTIMI
 - **Anleihen:** Stück und Kurs beziehen sich auf den Nennwert, der Kurs ist ein Anteil davon (0,98 = 98 %). Stückzinsen beim
   Kauf gehören zum Einstand.
 
-**Bewertung:** Die App kennt nur die Kurse aus dem Export, also den letzten eigenen Kauf, Verkauf oder Eingang je
-Wertpapier. Der Depotwert ist deshalb eine Schätzung und weicht vom Wert bei Trade Republic ab, je länger der letzte Kurs
-zurückliegt. Jede Position nennt das Datum ihres Kurses, die Seite nennt die Zahl der Positionen mit Kursen über 30 Tage.
-Auch Verlauf und Gesamtsaldo in der Übersicht beruhen auf diesen Kursen, je Monat mit dem bis dahin letzten bekannten Kurs.
-Kurse von außen fragt die App nicht ab.
+**Bewertung:** Jede Position zählt mit ihrem jüngsten bekannten Kurs. Das ist der Kurs des letzten eigenen Kaufs,
+Verkaufs oder Eingangs aus dem Export, bis „Kurse aktualisieren“ auf der Seite des Depots aktuelle Kurse holt:
+
+- **Aktien, ETFs und Anleihen** von [Lang & Schwarz Exchange](https://www.ls-tc.de), dem Handelsplatz, über den Trade
+  Republic ausführt, gesucht über die ISIN. Es zählt der Mittelkurs, ohne Handel am Tag der letzte der Kurshistorie.
+  Anleihen notieren dort in Prozent und werden wie im Export als Anteil vom Nennwert gespeichert (98 % = 0,98).
+  Lang & Schwarz hat keine offizielle Schnittstelle, die App fragt ab, was die Website für ihre Kursgrafik lädt. Ändert
+  Lang & Schwarz das, schlägt der Abruf fehl, die Seite nennt die betroffenen Positionen, und es gilt der letzte Kurs.
+- **Krypto** von [Kraken](https://www.kraken.com) über die öffentliche Schnittstelle, der letzte Preis in Euro.
+- **Private-Markets-Fonds** haben keine öffentlichen Kurse, nur einen Wert je Monat. Für sie gilt der Kurs aus dem Export;
+  ein Sparplan kauft monatlich zu diesem Wert.
+
+Abgerufen wird nur auf Knopfdruck, ohne Konto und mit der Kennung „Haushaltsbuch“. Nach außen gehen nur die ISINs der
+offenen Positionen und die Krypto-Kürzel, nie Stückzahlen oder Beträge. Gespeichert wird ein Kurs je Wertpapier und Tag
+(Tabelle `depot_prices`), ein späterer Abruf am selben Tag ersetzt ihn. Jede Position nennt Tag und Herkunft ihres Kurses,
+die Seite nennt die Zahl der Positionen mit Kursen über 30 Tage und den Zeitpunkt des letzten Abrufs. Verlauf und
+Gesamtsaldo in der Übersicht beruhen auf denselben Kursen, je Monat mit dem bis dahin jüngsten. Ein abgerufener Kurs gilt
+ab seinem Tag, nach den Bewegungen dieses Tages; ein späterer Kauf oder Verkauf geht wieder vor. Ohne Abruf bleibt der
+Depotwert eine Schätzung und weicht vom Wert bei Trade Republic ab, je länger der letzte Kurs zurückliegt.
 
 **Löschen:** „Depot löschen“ entfernt das Depot mit seinen Bewegungen, die Buchungen im Geldkonto bleiben. Ein neuer Import
 stellt es wieder her.
@@ -439,8 +454,9 @@ Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neu
 ## Tests
 Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
 Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
-Duplikaterkennung, Zuordnung zu Konten) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf) laufen mit dem
-Test-Runner von Node.js 20+ und brauchen keine Datenbank:
+Duplikaterkennung, Zuordnung zu Konten) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf)
+laufen mit dem Test-Runner von Node.js 20+ und brauchen weder Datenbank noch Netz; die Antworten von Lang & Schwarz und
+Kraken sind nachgestellt:
 ```
 cd backend
 npm test
@@ -457,6 +473,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── categories.js         Kategorien: Standardliste und Prüfung der Eingaben
 │   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
 │   ├── depot.js              Depot: Wertpapierbewegungen, Bestände, Einstand, Gewinne, Depotwert im Zeitverlauf
+│   ├── quotes.js             Aktuelle Kurse von Lang & Schwarz und Kraken abrufen und speichern
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -559,6 +576,18 @@ Geld ins Depot.
 | `price`       | `NUMERIC(24,10)`| Kurs, optional |
 | `amount`, `fee`, `tax` | `NUMERIC(12,2)` | Betrag, Gebühr und Steuer mit Vorzeichen |
 
+### Tabelle `depot_prices`
+Abgerufene Kurse (siehe „Bewertung“ unter „Depot“), einer je Wertpapier und Tag. Sie gelten für jedes Depot mit dem
+Wertpapier und bleiben, wenn ein Depot gelöscht wird.
+
+| Spalte       | Typ              | Hinweis |
+|--------------|------------------|---------|
+| `isin`       | `TEXT`           | ISIN, bei Krypto das Kürzel; mit `date` Primärschlüssel |
+| `date`       | `DATE`           | Handelstag des Kurses |
+| `price`      | `NUMERIC(24,10)` | Kurs in Euro, bei Anleihen als Anteil vom Nennwert |
+| `source`     | `TEXT`           | `ls` (Lang & Schwarz) oder `kraken` |
+| `fetched_at` | `TIMESTAMPTZ`    | Zeitpunkt des Abrufs |
+
 ### Tabelle `categories`
 Ein Eintrag je Kategorie und Art. Buchungen speichern den Namen der Kategorie in `transactions.category`.
 
@@ -619,6 +648,7 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `PATCH`  | `/api/accounts/:id`                  | Konto ändern, nur die übergebenen Felder; liefert das geänderte Konto |
 | `DELETE` | `/api/accounts/:id`                  | Konto löschen, `204`; enthält es noch Buchungen, `409`. Die Wertpapierbewegungen eines Depots gehen mit |
 | `GET`    | `/api/depots/:id?until=YYYY-MM`      | Bestand und Bewegungen eines Depots, Verlauf bis zum Monat `until` |
+| `POST`   | `/api/depots/:id/prices`             | Aktuelle Kurse für die offenen Positionen abrufen und speichern, liefert das Ergebnis je Position |
 | `GET`    | `/api/categories`                    | Kategorien aller Arten, „Sonstiges“ jeweils zuletzt |
 | `POST`   | `/api/categories`                    | Kategorie anlegen, liefert sie mit `201` zurück |
 | `PATCH`  | `/api/categories/:id`                | Kategorie umbenennen, ihre Buchungen ändern sich mit; liefert die geänderte Kategorie |
@@ -669,9 +699,16 @@ Geldkonto, sonst `null`) sowie `firstDate` und `lastDate` (erster und letzter Ta
 
 `GET /api/depots/:id` liefert `totals` (`value`, `invested`, `pending`, `unrealized`, `realized`, `income`, `taxes`, `fees`,
 `received`, `result`), `positions` und `closed` (offene und geschlossene Positionen mit denselben Werten sowie `isin`,
-`name`, `assetClass`, `shares`, `price`, `priceDate` und `lastDate`), `allocation` (`assetClass`, `value`, `share`), `history`
-(`month`, `value`, `invested` am Monatsanfang) und `movements` (neueste zuerst). `price` und `priceDate` sind der letzte
-bekannte Kurs, siehe „Depot“. Ohne Bewegungen sind die Listen leer, unbekanntes Konto: `404`.
+`name`, `assetClass`, `shares`, `price`, `priceDate`, `priceSource` und `lastDate`), `allocation` (`assetClass`, `value`,
+`share`), `history` (`month`, `value`, `invested` am Monatsanfang), `movements` (neueste zuerst) und `pricesFetchedAt`
+(Zeitpunkt des letzten Kursabrufs für dieses Depot, sonst `null`). `price`, `priceDate` und `priceSource` (`export`, `ls`
+oder `kraken`) sind der jüngste bekannte Kurs, siehe „Depot“. Ohne Bewegungen sind die Listen leer, unbekanntes Konto:
+`404`.
+
+`POST /api/depots/:id/prices` liefert unter `results` je offener Position z. B.
+`{ "isin": "DE0007236101", "name": "Siemens", "source": "ls", "price": 269.73, "date": "2026-11-03" }`, bei einem Fehler
+statt Kurs und Tag `"error": "bei Lang & Schwarz nicht gefunden"` und für Private-Markets-Fonds `"source": null`.
+Gespeichert werden nur die abgerufenen Kurse.
 
 Body für `POST /api/categories`: `{ "kind": "out", "name": "Haustier" }`, für `PATCH`: `{ "name": "Tiere" }`. Kategorien
 enthalten zusätzlich `id`, `transactionCount` (Buchungen dieser Art und Kategorie) und `fixed`: `true` bei „Sonstiges“,
@@ -697,10 +734,10 @@ Die Vorschau nennt unter `accounts` je eigener IBAN das Konto und die Zahl der n
 sie braucht der Import `account`. Die Zusammenfassung des Imports nennt unter `accounts` die Konten mit der Zahl
 der importierten Umsätze und ob sie neu angelegt wurden.
 
-Die Wertpapierbewegungen stehen in der Vorschau unter `depot`, z. B. `{ "new": 905, "duplicate": 0, "positions": 37 }`, und
+Die Wertpapierbewegungen stehen in der Vorschau unter `depot`, z. B. `{ "new": 120, "duplicate": 0, "positions": 12 }`, und
 Zeilen, die nur ins Depot gehen, in `counts.depot`. Enthält die Datei neue Bewegungen, braucht der Import `account`: das
 Geldkonto oder das Depot selbst. Die Zusammenfassung nennt unter `depot` das Depot, z. B.
-`{ "id": 4, "name": "Trade Republic Depot", "imported": 905, "created": true }`, ohne neue Bewegungen `null`. Bisherige
+`{ "id": 4, "name": "Trade Republic Depot", "imported": 120, "created": true }`, ohne neue Bewegungen `null`. Bisherige
 Importe enthalten dazu `depotImported`.
 
 ## Fehlerbehebung
