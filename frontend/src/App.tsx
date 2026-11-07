@@ -6,7 +6,7 @@ import BookingsPage from "./pages/BookingsPage";
 import CategoriesPage from "./pages/CategoriesPage";
 import DashboardPage from "./pages/DashboardPage";
 import ImportPage from "./pages/ImportPage";
-import { Link, navigate, useLocation, useTitle } from "./router";
+import { ALL_MONTHS, Link, navigate, useLocation, useTitle } from "./router";
 import type { Transaction } from "./types";
 
 const NAV: [string, string][] = [
@@ -31,7 +31,7 @@ function NotFound() {
 }
 
 function Shell() {
-  const { path } = useLocation();
+  const { path, query } = useLocation();
   const { error, refresh } = useData();
   const [adding, setAdding] = useState(false);
   const lastAccount = useRef<number | null>(null); // Konto der zuletzt erfassten Buchung
@@ -57,8 +57,11 @@ function Shell() {
   const handleSaved = (tx: Transaction) => {
     lastAccount.current = tx.accountId;
     refresh();
-    // In einer Monatsansicht zum Monat der Buchung wechseln, damit sie zu sehen ist
-    if (path === "/buchungen" || accountId) navigate(`${path}?monat=${tx.date.slice(0, 7)}`, { replace: true });
+    // In einer Monatsansicht zum Monat der Buchung wechseln, damit sie zu sehen ist. Die Ansicht aller Monate bleibt,
+    // nur ohne Filter, die die Buchung verbergen könnten.
+    const allMonths = path === "/buchungen" && query.get("monat") === ALL_MONTHS;
+    const month = allMonths ? ALL_MONTHS : tx.date.slice(0, 7);
+    if (path === "/buchungen" || accountId) navigate(`${path}?monat=${month}`, { replace: true });
   };
 
   return (

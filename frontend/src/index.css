@@ -30,6 +30,7 @@ h1{font-size:1.4rem;font-weight:600;margin:0}
 .danger{color:var(--out)}
 .month{display:flex;align-items:center;gap:8px}
 .month span{min-width:140px;text-align:center;font-weight:500}
+.period{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 .icon{background:var(--surface);border:1px solid var(--line);border-radius:8px;width:36px;height:36px}

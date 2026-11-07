@@ -8,7 +8,7 @@ import {
 } from "../api";
 import { OFFLINE, useData, useLoad } from "../data";
 import { bookings } from "../format";
-import type { Transaction, TransactionChanges, TransactionFilters } from "../types";
+import { isFiltered, type Transaction, type TransactionChanges, type TransactionFilters } from "../types";
 import BalanceCard from "./BalanceCard";
 import BulkEditDialog, { type BulkUpdate } from "./BulkEditDialog";
 import CategoryBreakdown from "./CategoryBreakdown";
@@ -21,15 +21,15 @@ interface Props {
   onMonthChange: (month: string) => void;
   /** Nur die Buchungen dieses Kontos; ohne alle */
   accountId?: number;
-  /** Statt des Monats die Treffer dieser Filter aus allen Monaten zeigen */
+  /** Statt des Monats die Buchungen aus allen Monaten zeigen, die zu diesen Filtern passen; ohne Filter alle */
   filters?: TransactionFilters;
   /** Überschriften als h3, wenn die Ansicht unter einer h2 steht */
   nested?: boolean;
 }
 
 /**
- * Buchungen eines Monats oder Treffer einer Suche, mit Saldo, Ausgaben nach Kategorie und Liste zum Bearbeiten und
- * Löschen, einzeln oder mehrere auf einmal
+ * Buchungen eines Monats, aller Monate oder Treffer einer Suche, mit Saldo, Ausgaben nach Kategorie und Liste zum
+ * Bearbeiten und Löschen, einzeln oder mehrere auf einmal
  */
 export default function BookingsView({ month, onMonthChange, accountId, filters, nested = false }: Props) {
   const { accounts, createAccount, refresh } = useData();
@@ -46,6 +46,7 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
   const [error, setError] = useState("");
   // Unter einer h2 eine Ebene tiefer, aber gleich groß
   const Heading = nested ? "h3" : "h2";
+  const searching = !!filters && isFiltered(filters);
   const outOfView = selected.size - items.filter((x) => selected.has(x.id)).length;
 
   const select = (txs: Transaction[], on: boolean) => {
@@ -101,20 +102,23 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
       {data && (
         <div className={`grid columns${loading ? " stale" : ""}`}>
           <div>
-            <BalanceCard items={items} label={filters ? "Saldo der Treffer" : "Saldo im Monat"} />
+            <BalanceCard
+              items={items}
+              label={searching ? "Saldo der Treffer" : filters ? "Saldo aller Monate" : "Saldo im Monat"}
+            />
             <section>
               <Heading className="h2">Ausgaben nach Kategorie</Heading>
               <CategoryBreakdown items={items} />
             </section>
           </div>
           <section>
-            <Heading className="h2">{filters ? `${items.length} Treffer` : bookings(items.length)}</Heading>
+            <Heading className="h2">{searching ? `${items.length} Treffer` : bookings(items.length)}</Heading>
             <TransactionList
               items={items}
               accounts={accounts}
               showAccount={accountId === undefined}
               showYear={!!filters}
-              emptyText={filters ? "Keine Treffer." : undefined}
+              emptyText={searching ? "Keine Treffer." : filters ? "Noch keine Buchungen." : undefined}
               selected={selected}
               onSelect={select}
               onEdit={setEditing}
