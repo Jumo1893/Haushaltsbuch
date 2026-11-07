@@ -21,8 +21,11 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
   stehen durch den Import fest und bleiben, wie sie sind.
 - Wiederkehrende Buchungen mit ihrem Rhythmus kennzeichnen: monatlich, quartalsweise, halbjährlich oder jährlich (siehe
   „Rhythmus“)
-- Buchungen über alle Monate und Konten suchen und mehrere auf einmal bearbeiten, z. B. alle Einkäufe bei Penny auf
-  die Kategorie „Lebensmittel“ setzen (siehe „Oberfläche“)
+- Buchungen über alle Monate und Konten suchen und mehrere auf einmal bearbeiten, z. B. alle Beiträge der
+  Hausratversicherung auf die Kategorie „Versicherung“ setzen (siehe „Oberfläche“)
+- Importierte Ausgaben automatisch zuordnen: Einkäufe bei bekannten Supermarktketten zu „Lebensmittel“,
+  Kartenzahlungen mit Händlerart (MCC, z. B. von Trade Republic) nach der Art des Händlers (siehe „Automatische
+  Kategorien“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
 - Depot aus dem Trade-Republic-Export, getrennt vom Geldkonto: Bestände, Einstand, Gewinne, Erträge, Anlageklassen und
   alle Bewegungen, mit aktuellen Kursen auf Knopfdruck oder an jedem Werktag (siehe „Depot“)
@@ -167,7 +170,10 @@ direkt in jeder Kategorieauswahl unter „Neue Kategorie anlegen …“ anlegen.
 - **Umbenennen:** Die Buchungen dieser Kategorie ändern sich mit. Ein Name kommt je Art nur einmal vor.
 - **Löschen:** Die Buchungen der Kategorie wandern in eine andere derselben Art, vorausgewählt ist „Sonstiges“. Das lässt
   sich nicht rückgängig machen. So lassen sich auch zwei Kategorien zusammenlegen.
-- **„Sonstiges“** ist fest und lässt sich weder umbenennen noch löschen, denn hier landen importierte Buchungen.
+- **Automatisch:** Bei Kategorien, die importierte Ausgaben automatisch bekommen, steht, welche das sind (siehe
+  „Automatische Kategorien“).
+- **„Sonstiges“** ist fest und lässt sich weder umbenennen noch löschen, denn hier landen importierte Buchungen, die
+  sich nicht automatisch zuordnen lassen.
 
 Eine Kategorie gehört zur Art der Buchung: „Sonstiges“ gibt es dreimal, Änderungen gelten nur für die jeweilige Art. Wird
 eine Buchung später zur Umbuchung, behält sie ihre Kategorie, auch wenn die Liste der Umbuchungen sie nicht enthält.
@@ -349,12 +355,13 @@ von der Seite eines Kontos, ist dieses Konto für Umsätze ohne eigene IBAN scho
 3. Die Vorschau zeigt, wie viele Datensätze neu sind, welche schon importiert wurden und welche Zeilen
    fehlerhaft sind (mit Zeilennummer und Grund), dazu die ersten Datensätze und die Konten, in die sie gehen.
    Enthält die Datei keine IBAN des eigenen Kontos, wird hier das Konto gewählt.
-4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung mit Links zu den Konten, und der
-   Import steht unter „Bisherige Importe“.
+4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung mit Links zu den Konten und den
+   automatisch zugeordneten Umsätzen je Kategorie, und der Import steht unter „Bisherige Importe“.
 
 Regeln:
-- **Buchungen:** Jeder gültige Datensatz wird eine Buchung in der Kategorie „Sonstiges“, mit negativem Betrag
-  als Ausgabe, mit positivem als Einnahme. Gegenpartei und Verwendungszweck werden mitgespeichert und in der
+- **Buchungen:** Jeder gültige Datensatz wird eine Buchung, mit negativem Betrag als Ausgabe, mit positivem als
+  Einnahme. Ausgaben bekommen ihre Kategorie wenn möglich automatisch (siehe „Automatische Kategorien“), alle anderen
+  Buchungen landen in „Sonstiges“. Gegenpartei und Verwendungszweck werden mitgespeichert und in der
   Buchungsliste angezeigt, weitere Angaben (z. B. IBAN, Buchungstext, ISIN) in der Spalte `details`.
   Stehen Gebühr und Steuer in eigenen Spalten, sind sie im Betrag der Buchung enthalten.
 - **Konten:** Umsätze mit eigener IBAN gehen in das Konto mit dieser IBAN, ein unbekanntes Konto legt der Import an.
@@ -381,6 +388,32 @@ Regeln:
 - **Datenschutz:** Die Datei wird nur im Arbeitsspeicher verarbeitet, nicht gespeichert, und ihr Inhalt landet
   nicht im Log. Texte, die eine Tabellenkalkulation als Formel lesen würde (Beginn mit `=`, `+`, `-` oder `@`),
   werden mit vorangestelltem `'` gespeichert. Das schützt vor CSV-/Formel-Injection bei einem späteren Export.
+
+### Automatische Kategorien
+Importierte Ausgaben bekommen ihre Kategorie automatisch, wenn eins von beidem zutrifft. Die Händlerart hat Vorrang,
+so ist z. B. die Tankstelle eines Supermarkts „Mobilität“.
+- **Händlerart:** Trade Republic liefert bei Kartenzahlungen die Händlerart mit (MCC, Spalte `mcc_code`, gespeichert in
+  `details.mcc`). Die Tabelle in `backend/autocategories.js` ordnet die eindeutigen Codes zu: Supermärkte, Bäcker,
+  Metzger, Restaurants und Imbisse zu „Lebensmittel“; Tankstellen, Ladesäulen, Bahn, Bus, Taxi, Mietwagen, Parken und
+  Werkstätten zu „Mobilität“; Kino, Konzerte, Sport, Bars, Streaming und Spiele zu „Freizeit“; Ärzte, Apotheken,
+  Optiker und Kliniken zu „Gesundheit“; Strom, Gas, Wasser, Möbel und Baumärkte zu „Wohnen“; Versicherungen zu
+  „Versicherung“. Codes, die zu mehreren Kategorien passen (Abos, App-Stores, Software, Bildung, Kaufhäuser), fehlen
+  absichtlich.
+- **Supermarkt:** Steht eine bekannte Kette (z. B. REWE, EDEKA, ALDI, Lidl, Netto, PENNY, Kaufland, tegut, denn's)
+  als eigenes Wort im Namen der Gegenpartei, ist die Ausgabe „Lebensmittel“, auch ohne Händlerart wie im Export der
+  Sparkasse. Eine Filialnummer direkt dahinter stört nicht. Andere Angebote der Ketten (z. B. ALDI TALK, Lidl Connect,
+  Penny Reisen, Globus Baumarkt) zählen nicht.
+
+Regeln:
+- **Wann:** beim Import für die neuen Umsätze und bei jedem Start des Backends für alle Ausgaben in „Sonstiges“. So
+  gilt eine erweiterte Tabelle auch für frühere Importe.
+- **Was:** nur Ausgaben in „Sonstiges“, deren Kategorie niemand von Hand gewählt hat. Wer eine Kategorie setzt, auch
+  zurück auf „Sonstiges“ und auch über „Bearbeiten“ für mehrere Buchungen, legt sie fest (`category_manual`). Einnahmen
+  und Umbuchungen bleiben, wie sie sind.
+- **Umbenennen:** Die Zuordnung hängt an der Kategorie, nicht an ihrem Namen (`categories.auto_key`). Aus
+  „Lebensmittel“ lässt sich also z. B. „Verpflegung“ machen. Wird die Kategorie gelöscht, bleiben solche Ausgaben in
+  „Sonstiges“, bis wieder eine Kategorie mit dem ursprünglichen Namen angelegt wird. Sie übernimmt die Zuordnung beim
+  nächsten Start.
 
 ### Unterstützte Formate
 
@@ -468,8 +501,8 @@ Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neu
 ## Tests
 Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
 Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
-Duplikaterkennung, Zuordnung zu Konten) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf,
-Termine des täglichen Abrufs)
+Duplikaterkennung, Zuordnung zu Konten), die automatischen Kategorien (Händlerarten, Supermärkte, von Hand gewählte
+Kategorien) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
 laufen mit dem Test-Runner von Node.js 20+ und brauchen weder Datenbank noch Netz; die Antworten von Lang & Schwarz und
 Kraken sind nachgestellt:
 ```
@@ -486,6 +519,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── transactions.js       Prüfung der Eingaben beim Anlegen, Ändern und Suchen von Buchungen
 │   ├── accounts.js           Konten: Prüfung der Eingaben, IBAN, Zuordnung beim Import
 │   ├── categories.js         Kategorien: Standardliste und Prüfung der Eingaben
+│   ├── autocategories.js     Automatische Kategorien: Händlerarten (MCC) und Supermärkte
 │   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
 │   ├── depot.js              Depot: Wertpapierbewegungen, Bestände, Einstand, Gewinne, Depotwert im Zeitverlauf
 │   ├── quotes.js             Aktuelle Kurse von Lang & Schwarz und Kraken abrufen und speichern
@@ -543,6 +577,7 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | `type`       | `TEXT`          | Richtung: `in` (erhöht den Kontostand) oder `out` (senkt ihn), auch bei Umbuchungen |
 | `amount`     | `NUMERIC(12,2)` | immer > 0                       |
 | `category`   | `TEXT`          | max. 40 Zeichen                 |
+| `category_manual` | `BOOLEAN`  | Kategorie von Hand gewählt, die automatische Zuordnung lässt die Buchung dann in Ruhe (siehe „Automatische Kategorien“) |
 | `date`       | `DATE`          | Buchungsdatum                   |
 | `note`       | `TEXT`          | max. 60 Zeichen, optional       |
 | `created_at` | `TIMESTAMPTZ`   | Zeitpunkt der Erfassung         |
@@ -625,6 +660,7 @@ Ein Eintrag je Kategorie und Art. Buchungen speichern den Namen der Kategorie in
 | `id`   | `SERIAL` | Primärschlüssel |
 | `kind` | `TEXT`   | `out` (Ausgaben), `in` (Einnahmen) oder `transfer` (Umbuchungen) |
 | `name` | `TEXT`   | max. 40 Zeichen, je Art nur einmal |
+| `auto_key` | `TEXT` | Gruppe von Ausgaben, die die Kategorie automatisch bekommt, z. B. `food`; je Gruppe höchstens eine Kategorie, leer: keine |
 
 ### Tabelle `imports`
 Ein Eintrag je Importvorgang.
@@ -743,8 +779,9 @@ statt Kurs und Tag `"error": "bei Lang & Schwarz nicht gefunden"` und für Priva
 Gespeichert werden nur die abgerufenen Kurse.
 
 Body für `POST /api/categories`: `{ "kind": "out", "name": "Haustier" }`, für `PATCH`: `{ "name": "Tiere" }`. Kategorien
-enthalten zusätzlich `id`, `transactionCount` (Buchungen dieser Art und Kategorie) und `fixed`: `true` bei „Sonstiges“,
-das sich nicht ändern lässt (`409`). Name schon vergeben: ebenfalls `409`.
+enthalten zusätzlich `id`, `transactionCount` (Buchungen dieser Art und Kategorie), `fixed`: `true` bei „Sonstiges“,
+das sich nicht ändern lässt (`409`), und `auto`: was sie automatisch bekommt, z. B. `"Versicherungen"`, sonst `null`.
+Name schon vergeben: ebenfalls `409`.
 
 `GET /api/stats/months` liefert je Konto und Monat z. B.
 `{ "month": "2026-10", "accountId": 1, "income": 2850, "expenses": 1935.59, "transfers": -300, "balance": 3456.78 }`:
@@ -764,7 +801,9 @@ Die Vorschau nennt unter `accounts` je eigener IBAN das Konto und die Zahl der n
 `{ "iban": "DE89370400440532013000", "accountId": 1, "accountName": "Girokonto", "new": 12, "duplicate": 0 }`.
 `accountId` ist `null`, wenn der Import das Konto erst anlegt. Datensätze ohne IBAN stehen unter `"iban": null`, für
 sie braucht der Import `account`. Die Zusammenfassung des Imports nennt unter `accounts` die Konten mit der Zahl
-der importierten Umsätze und ob sie neu angelegt wurden.
+der importierten Umsätze und ob sie neu angelegt wurden. Unter `autoCategorized` stehen die automatisch zugeordneten
+Umsätze je Kategorie, die meisten zuerst, z. B. `[{ "name": "Lebensmittel", "count": 12 }]`; die übrigen stehen in
+der Kategorie `category`.
 
 Die Wertpapierbewegungen stehen in der Vorschau unter `depot`, z. B. `{ "new": 120, "duplicate": 0, "positions": 12 }`, und
 Zeilen, die nur ins Depot gehen, in `counts.depot`. Enthält die Datei neue Bewegungen, braucht der Import `account`: das

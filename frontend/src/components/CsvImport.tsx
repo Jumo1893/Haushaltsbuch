@@ -32,6 +32,15 @@ interface Props {
 /** z. B. „1 Umsatz“, „5 Umsätze“ */
 const bookings = (n: number) => `${n} ${n === 1 ? "Umsatz" : "Umsätze"}`;
 
+/** Wo die importierten Umsätze stehen: automatisch zugeordnet je Kategorie, die übrigen in der Auffangkategorie */
+function categoryHint({ imported, category, autoCategorized }: ImportResult) {
+  const assigned = autoCategorized.reduce((sum, c) => sum + c.count, 0);
+  if (!assigned) return `Die Umsätze stehen in der Kategorie „${category}“ im Monat ihres Buchungstags.`;
+  const list = autoCategorized.map((c) => `${c.count} zu „${c.name}“`).join(", ");
+  const rest = assigned < imported ? ` Die übrigen stehen in „${category}“.` : "";
+  return `Die Umsätze stehen im Monat ihres Buchungstags. Automatisch zugeordnet: ${list}.${rest}`;
+}
+
 export default function CsvImport({ accounts, defaultAccountId = null, onCreateAccount, onImported }: Props) {
   const [options, setOptions] = useState<ImportOptions>({ maxFileBytes: 0, profiles: [] });
   const [profileId, setProfileId] = useState("");
@@ -170,9 +179,7 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
             )}
           </ul>
         )}
-        {result.imported > 0 && (
-          <p className="hint">Die Umsätze stehen in der Kategorie „{result.category}“ im Monat ihres Buchungstags.</p>
-        )}
+        {result.imported > 0 && <p className="hint">{categoryHint(result)}</p>}
         {result.accounts.some((a) => a.created) && (
           <p className="hint">
             Auf der Seite eines neuen Kontos lassen sich Name und Art ändern und der Kontostand mit der Bank abgleichen.

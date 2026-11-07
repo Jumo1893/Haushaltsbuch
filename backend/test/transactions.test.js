@@ -25,6 +25,7 @@ test("Anlegen: gültige Buchung wird für die Datenbank aufbereitet", () => {
     type: "out",
     amount: "42.50",
     category: "Lebensmittel",
+    category_manual: true,
     date: "2026-10-27",
     note: "Wocheneinkauf",
     account_id: 3,
@@ -70,7 +71,7 @@ test("Betrag: Cent werden gerundet, Zeichenketten sind erlaubt", () => {
 });
 
 test("Ändern: nur übergebene Felder werden geprüft und geliefert", () => {
-  assert.deepEqual(readTransaction({ category: "Freizeit" }, true), { category: "Freizeit" });
+  assert.deepEqual(readTransaction({ category: "Freizeit" }, true), { category: "Freizeit", category_manual: true });
   assert.deepEqual(readTransaction({ note: "" }, true), { note: "" });
   assert.deepEqual(readTransaction({}, true), {});
   assert.deepEqual(readTransaction({ accountId: 2 }, true), { account_id: 2 });
@@ -115,7 +116,18 @@ test("Rhythmus: ist bei importierten Buchungen nicht gesperrt", () => {
 test("Ändern: unbekannte Felder werden ignoriert", () => {
   assert.deepEqual(readTransaction({ category: "Wohnen", id: 7, import_id: null, account_id: 5, counterparty: "X" }, true), {
     category: "Wohnen",
+    category_manual: true,
   });
+  assert.deepEqual(readTransaction({ note: "", category_manual: false }, true), { note: "" });
+});
+
+test("Kategorie: wer sie angibt, wählt sie von Hand, die automatische Zuordnung lässt sie dann in Ruhe", () => {
+  assert.equal(readTransaction(valid()).category_manual, true, "beim Anlegen immer");
+  assert.equal(readTransaction({ category: "Sonstiges" }, true).category_manual, true, "auch zurück nach Sonstiges");
+  for (const body of [{ note: "Einkauf" }, { rhythm: "monthly" }, { transfer: true }]) {
+    assert.equal("category_manual" in readTransaction(body, true), false, JSON.stringify(body));
+  }
+  assert.deepEqual(lockedFields(readTransaction({ category: "Wohnen" }, true)), [], "auch bei importierten erlaubt");
 });
 
 test("importierte Buchungen: Art, Betrag, Datum und Konto sind gesperrt", () => {
@@ -128,13 +140,13 @@ test("importierte Buchungen: Art, Betrag, Datum und Konto sind gesperrt", () => 
 test("Sammeländerung: Kategorie und Notiz für mehrere Buchungen", () => {
   assert.deepEqual(readBulkChange({ ids: [1, 2], changes: { category: " Lebensmittel ", note: "Einkauf" } }), {
     ids: [1, 2],
-    changes: { category: "Lebensmittel", note: "Einkauf" },
+    changes: { category: "Lebensmittel", category_manual: true, note: "Einkauf" },
   });
   assert.deepEqual(readBulkChange({ ids: [3], changes: { note: "" } }), { ids: [3], changes: { note: "" } });
   assert.deepEqual(readBulkChange({ ids: [4, 4, 5], changes: { category: "Wohnen" } }).ids, [4, 5]);
   assert.deepEqual(readBulkChange({ ids: [6], changes: { transfer: true, category: "Sparen" } }), {
     ids: [6],
-    changes: { category: "Sparen", transfer_override: true },
+    changes: { category: "Sparen", category_manual: true, transfer_override: true },
   });
   assert.deepEqual(readBulkChange({ ids: [7], changes: { transfer: false } }).changes, { transfer_override: false });
   assert.deepEqual(readBulkChange({ ids: [8], changes: { rhythm: "monthly" } }).changes, { rhythm: "monthly" });

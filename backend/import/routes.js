@@ -14,10 +14,11 @@ const {
 } = require("./analyze");
 const { accountsForIbans } = require("../accounts");
 const { FALLBACK_CATEGORY } = require("../categories");
+const { autoCategorize } = require("../autocategories");
 const { depotOf } = require("../depot");
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-/** Kategorie für importierte Umsätze, bis es eine Kategorisierung gibt */
+/** Kategorie für importierte Umsätze, die sich nicht automatisch zuordnen lassen (siehe autocategories.js) */
 const IMPORT_CATEGORY = FALLBACK_CATEGORY;
 /** So viele der letzten Importe liefert GET /api/imports */
 const HISTORY_LIMIT = 50;
@@ -246,6 +247,7 @@ function createImportRouter(pool, profiles) {
         [profile.id, profile.name, fileName, toSave.length, movements.length, duplicatesSkipped, counts.skipped, counts.invalid],
       );
       if (toSave.length) await insertTransactions(client, run.id, toSave, ids);
+      const autoCategorized = toSave.length ? await autoCategorize(client, run.id) : [];
       if (depot) await insertMovements(client, run.id, movements, depot.id);
       await client.query("COMMIT");
       res.status(201).json({
@@ -255,6 +257,7 @@ function createImportRouter(pool, profiles) {
         skipped: counts.skipped,
         invalid: counts.invalid,
         category: IMPORT_CATEGORY,
+        autoCategorized,
         accounts,
         depot: depot && { id: depot.id, name: depot.name, imported: movements.length, created: depot.isNew },
       });

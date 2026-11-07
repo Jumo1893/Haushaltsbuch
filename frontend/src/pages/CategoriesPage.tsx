@@ -54,7 +54,10 @@ export default function CategoriesPage() {
                 <li key={c.id}>
                   <div>
                     {c.name}
-                    <small>{bookings(c.transactionCount)}</small>
+                    <small>
+                      {bookings(c.transactionCount)}
+                      {c.auto && ` · automatisch: ${c.auto}`}
+                    </small>
                   </div>
                   {c.fixed ? (
                     <span className="badge">Fest</span>
@@ -74,8 +77,13 @@ export default function CategoriesPage() {
         </section>
       ))}
       <p className="hint">
-        „Sonstiges“ ist fest: Hier landen importierte Buchungen, und beim Löschen einer Kategorie ist es die Vorauswahl
-        für ihre Buchungen.
+        Importierte Ausgaben werden automatisch zugeordnet, wenn die Gegenpartei eine bekannte Supermarktkette ist oder
+        die Kartenzahlung eine passende Händlerart mitbringt (MCC, z. B. bei Trade Republic). Das gilt auch nach dem
+        Umbenennen der Kategorie. Eine von Hand gewählte Kategorie bleibt, wie sie ist.
+      </p>
+      <p className="hint">
+        „Sonstiges“ ist fest: Hier landen importierte Buchungen, die sich nicht automatisch zuordnen lassen, und beim
+        Löschen einer Kategorie ist es die Vorauswahl für ihre Buchungen.
       </p>
 
       {creating && (

@@ -16,6 +16,7 @@ const {
 } = require("./transactions");
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
 const { KINDS: CATEGORY_KINDS, FALLBACK_CATEGORY, DEFAULT_CATEGORIES, readCategory } = require("./categories");
+const { SEED_AUTO_KEYS, autoLabelSql, autoCategorize } = require("./autocategories");
 const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
 const { withDepots, withDepotMonths, withDepotDays, depotView, refreshDepot } = require("./depot");
 const { startSchedule, autoPriceState, setAutoPrices } = require("./schedule");
@@ -31,9 +32,9 @@ const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
   to_char(t.date, 'YYYY-MM-DD') AS date, t.note, t.counterparty, t.purpose, t.import_id AS "importId",
   t.account_id AS "accountId", ${TRANSFER} AS transfer, t.rhythm FROM transactions t`;
 
-// Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen
+// Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen; auto: was sie automatisch bekommt
 const CATEGORIES = `SELECT c.id, c.kind, c.name, c.name = '${FALLBACK_CATEGORY}' AS fixed,
-  COALESCE(u.count, 0)::int AS "transactionCount"
+  ${autoLabelSql("c.auto_key")} AS auto, COALESCE(u.count, 0)::int AS "transactionCount"
   FROM categories c LEFT JOIN (
     SELECT t.category, ${KIND} AS kind, count(*) AS count FROM transactions t GROUP BY 1, 2
   ) u ON u.category = c.name AND u.kind = c.kind`;
@@ -154,6 +155,15 @@ const SCHEMA = [
     failed JSONB NOT NULL DEFAULT '[]'
   )`,
   "CREATE INDEX IF NOT EXISTS idx_auto_price_runs ON auto_price_runs(account_id, due)",
+  // Kategorie, die bestimmte Ausgaben automatisch bekommt (siehe autocategories.js); bleibt beim Umbenennen erhalten
+  "ALTER TABLE categories ADD COLUMN IF NOT EXISTS auto_key TEXT UNIQUE",
+  SEED_AUTO_KEYS,
+  // Kategorie von Hand gewählt: Die automatische Zuordnung lässt die Buchung in Ruhe. Beim Einführen der Spalte gilt das
+  // für von Hand erfasste Buchungen und für importierte, die schon nicht mehr in der Auffangkategorie stehen.
+  "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_manual BOOLEAN",
+  `UPDATE transactions SET category_manual = (import_id IS NULL OR category <> '${FALLBACK_CATEGORY}')
+   WHERE category_manual IS NULL`,
+  "ALTER TABLE transactions ALTER COLUMN category_manual SET DEFAULT false, ALTER COLUMN category_manual SET NOT NULL",
 ];
 
 /**
@@ -226,6 +236,12 @@ async function init() {
   } finally {
     client.release();
   }
+  // Bisherige Ausgaben in der Auffangkategorie zuordnen, z. B. nach dem Einführen oder Erweitern der Zuordnung
+  const assigned = await autoCategorize(pool);
+  if (assigned.length) {
+    const total = assigned.reduce((sum, a) => sum + a.count, 0);
+    console.log(`Automatisch zugeordnet: ${total} Buchungen (${assigned.map((a) => `${a.name} ${a.count}`).join(", ")}).`);
+  }
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -269,9 +285,9 @@ app.post("/api/transactions", async (req, res) => {
   if (!tx) return res.status(400).json({ error: "Ungültige Eingabe" });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO transactions (type, amount, category, date, note, account_id, transfer_override, rhythm)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [tx.type, tx.amount, tx.category, tx.date, tx.note, tx.account_id, tx.transfer_override ?? null,
+      `INSERT INTO transactions (type, amount, category, category_manual, date, note, account_id, transfer_override, rhythm)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [tx.type, tx.amount, tx.category, tx.category_manual, tx.date, tx.note, tx.account_id, tx.transfer_override ?? null,
         tx.rhythm ?? null]);
     const r = await pool.query(`${SELECT} WHERE t.id = $1`, [rows[0].id]);
     res.status(201).json(r.rows[0]);

@@ -268,7 +268,10 @@ export interface ImportResult {
   duplicatesSkipped: number;
   skipped: number;
   invalid: number;
+  /** Kategorie der Umsätze, die sich nicht automatisch zuordnen ließen */
   category: string;
+  /** Automatisch zugeordnete Umsätze je Kategorie, die meisten zuerst */
+  autoCategorized: { name: string; count: number }[];
   accounts: { id: number; name: string; imported: number; created: boolean }[];
   depot: { id: number; name: string; imported: number; created: boolean } | null;
 }
@@ -289,6 +292,8 @@ export interface NewCategory {
 export interface Category extends NewCategory {
   id: number;
   fixed: boolean; // lässt sich weder umbenennen noch löschen
+  /** Welche Ausgaben die Kategorie automatisch bekommt, z. B. „Supermärkte, Bäcker …“; sonst null */
+  auto: string | null;
   transactionCount: number;
 }
 

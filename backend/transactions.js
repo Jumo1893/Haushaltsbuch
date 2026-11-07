@@ -22,6 +22,7 @@ function isDate(value) {
  * Anlegen müssen type, amount, category, date und accountId vorhanden sein. Mit partial (Ändern) werden
  * nur die übergebenen Felder geprüft und zurückgegeben. transfer ist immer optional: ohne Angabe wird
  * automatisch erkannt, ob die Buchung eine Umbuchung ist. Auch rhythm ist immer optional, null heißt einmalig.
+ * Wer die Kategorie angibt, wählt sie von Hand (category_manual): Die automatische Zuordnung lässt sie dann in Ruhe.
  */
 function readTransaction(body, partial = false) {
   const given = (key) => !partial || body[key] !== undefined;
@@ -38,6 +39,7 @@ function readTransaction(body, partial = false) {
   if (given("category")) {
     if (typeof body.category !== "string" || !body.category.trim()) return null;
     values.category = body.category.trim().slice(0, 40);
+    values.category_manual = true;
   }
   if (given("date")) {
     if (!isDate(body.date)) return null;
