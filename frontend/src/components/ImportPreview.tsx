@@ -1,6 +1,7 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import { dateFormat, eur, formatIban, movements, parseDate } from "../format";
 import type { Account, ImportAccount, ImportPreview as Preview, ImportRow, NewAccount } from "../types";
+import AccountDialog from "./AccountDialog";
 import AccountSelect from "./AccountSelect";
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   /** Konto für Datensätze ohne eigene IBAN */
   accountId: number | null;
   onAccountChange: (id: number) => void;
+  /** Legt ein Konto an. Hat es eine IBAN der Datei, gehen deren Datensätze in dieses Konto. */
   onCreateAccount: (account: NewAccount) => Promise<Account>;
   includeDuplicates: boolean;
   onIncludeDuplicates: (include: boolean) => void;
@@ -49,7 +51,18 @@ function Row({ row }: { row: ImportRow }) {
 /** z. B. „1 Datensatz“, „5 Datensätze“ */
 const records = (n: number) => `${n} ${n === 1 ? "Datensatz" : "Datensätze"}`;
 
-function AccountRow({ account }: { account: ImportAccount & { iban: string } }) {
+interface AccountRowProps {
+  account: ImportAccount & { iban: string };
+  disabled: boolean;
+  onCreate: Props["onCreateAccount"];
+}
+
+/**
+ * Konto zu einer eigenen IBAN der Datei. Gibt es noch keins, legt der Import es mit der IBAN als Name an;
+ * über „Bearbeiten“ lässt es sich vorher mit eigenem Namen, Art und Bank anlegen.
+ */
+function AccountRow({ account, disabled, onCreate }: AccountRowProps) {
+  const [editing, setEditing] = useState(false);
   const iban = formatIban(account.iban);
   const isNew = account.accountId === null;
   // Die IBAN nur nennen, wenn sie nicht ohnehin der Name des Kontos ist
@@ -61,7 +74,23 @@ function AccountRow({ account }: { account: ImportAccount & { iban: string } }) 
         {isNew && <span className="badge">Neues Konto</span>}
         {info && <small>{info}</small>}
       </div>
-      <span className="count">{records(account.new + account.duplicate)}</span>
+      <div className="row-end">
+        <span className="count">{records(account.new + account.duplicate)}</span>
+        {isNew && (
+          <button className="ghost small" type="button" disabled={disabled} onClick={() => setEditing(true)}>
+            Bearbeiten
+          </button>
+        )}
+      </div>
+      {editing && (
+        <AccountDialog
+          fixedIban={account.iban}
+          onSave={async (values) => {
+            await onCreate(values);
+          }}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </li>
   );
 }
@@ -136,7 +165,7 @@ export default function ImportPreview({
           <h3>{withIban.length === 1 ? "Konto" : "Konten"}</h3>
           <ul className="rows">
             {withIban.map((a) => (
-              <AccountRow key={a.iban} account={a} />
+              <AccountRow key={a.iban} account={a} disabled={importing} onCreate={onCreateAccount} />
             ))}
           </ul>
         </>

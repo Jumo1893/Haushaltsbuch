@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, fetchImportOptions, previewImport, runImport } from "../api";
 import { megabytes, movements } from "../format";
 import { Link } from "../router";
-import type { Account, ImportOptions, ImportPreview as Preview, ImportResult, NewAccount, ProfileMismatch } from "../types";
+import type {
+  Account,
+  ImportAccount,
+  ImportOptions,
+  ImportPreview as Preview,
+  ImportResult,
+  NewAccount,
+  ProfileMismatch,
+} from "../types";
 import ImportPreview, { Stat } from "./ImportPreview";
 
 type Step =
@@ -139,6 +147,17 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
     }
   };
 
+  /** Legt ein Konto an. Hat es eine eigene IBAN der Datei, zeigt die Vorschau deren Datensätze nun in diesem Konto. */
+  const createAccount = async (account: NewAccount) => {
+    const created = await onCreateAccount(account);
+    const assign = (a: ImportAccount): ImportAccount =>
+      a.iban !== null && a.iban === created.iban ? { ...a, accountId: created.id, accountName: created.name } : a;
+    setStep((s) =>
+      s.kind === "preview" ? { kind: "preview", preview: { ...s.preview, accounts: s.preview.accounts.map(assign) } } : s,
+    );
+    return created;
+  };
+
   const handleDrop = (e: DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     setDragging(false);
@@ -257,7 +276,7 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
           accounts={accounts}
           accountId={accountId}
           onAccountChange={setAccountId}
-          onCreateAccount={onCreateAccount}
+          onCreateAccount={createAccount}
           includeDuplicates={includeDuplicates}
           onIncludeDuplicates={setIncludeDuplicates}
           importing={step.kind === "importing"}

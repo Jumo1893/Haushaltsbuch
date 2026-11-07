@@ -174,6 +174,8 @@ h3{font-size:.95rem;font-weight:600;margin:16px 0 4px}
 .rows small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted);vertical-align:1px}
 .count{color:var(--muted);font-size:.9rem;white-space:nowrap}
+.row-end{display:flex;justify-content:flex-end;align-items:center;gap:6px 12px}
+@media (max-width:520px){.row-end{flex-direction:column;align-items:flex-end}}
 .import-account{margin-top:16px}
 .imports li{display:block}
 .imports small{overflow-wrap:anywhere}
@@ -191,6 +193,7 @@ a.ghost{display:inline-block;text-decoration:none}
 form .actions{margin-top:6px}
 .welcome p{margin:0;color:var(--muted)}
 input:disabled,.seg label:has(input:disabled){opacity:.65;cursor:default}
+input[readonly]{background:none;color:var(--muted)}
 dialog.edit{width:min(560px,calc(100% - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}
 dialog.edit::backdrop{background:rgb(0 0 0/.45)}
 dialog.edit .hint{margin:0 0 12px}
