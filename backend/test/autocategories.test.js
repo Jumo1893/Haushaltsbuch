@@ -141,6 +141,7 @@ test("Zuordnen: Kandidaten wandern gesammelt in die Kategorie ihres Schlüssels,
   const select = db.queries.find((q) => q.sql.startsWith("SELECT t.id"));
   assert.deepEqual(select.params, [FALLBACK_CATEGORY, 7], "nur Auffangkategorie und dieser Import");
   assert.match(select.sql, /NOT t\.category_manual/, "von Hand gewählte bleiben");
+  assert.match(select.sql, /t\.rule_id IS NULL/, "gemerkte Zuordnungen gehen vor, auch nach „Sonstiges“");
 });
 
 test("Zuordnen: ohne Kategorien mit Schlüssel wird nichts gelesen oder geändert", async () => {

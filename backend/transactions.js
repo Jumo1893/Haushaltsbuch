@@ -23,6 +23,7 @@ function isDate(value) {
  * nur die übergebenen Felder geprüft und zurückgegeben. transfer ist immer optional: ohne Angabe wird
  * automatisch erkannt, ob die Buchung eine Umbuchung ist. Auch rhythm ist immer optional, null heißt einmalig.
  * Wer die Kategorie angibt, wählt sie von Hand (category_manual): Die automatische Zuordnung lässt sie dann in Ruhe.
+ * Wer Kategorie oder Rhythmus angibt, löst die Buchung außerdem von ihrer gemerkten Zuordnung (rule_id, siehe rules.js).
  */
 function readTransaction(body, partial = false) {
   const given = (key) => !partial || body[key] !== undefined;
@@ -40,6 +41,7 @@ function readTransaction(body, partial = false) {
     if (typeof body.category !== "string" || !body.category.trim()) return null;
     values.category = body.category.trim().slice(0, 40);
     values.category_manual = true;
+    values.rule_id = null;
   }
   if (given("date")) {
     if (!isDate(body.date)) return null;
@@ -58,6 +60,7 @@ function readTransaction(body, partial = false) {
   if (body.rhythm !== undefined) {
     if (body.rhythm !== null && !RHYTHMS.includes(body.rhythm)) return null;
     values.rhythm = body.rhythm;
+    values.rule_id = null;
   }
   return values;
 }

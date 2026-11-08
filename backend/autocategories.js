@@ -115,9 +115,9 @@ const autoLabelSql = (column) =>
     .join(" ")} END`;
 
 /**
- * Ordnet Ausgaben in „Sonstiges“ automatisch zu, deren Kategorie niemand von Hand gewählt hat, mit importId nur die
- * dieses Imports. Gruppen ohne Kategorie mit ihrem Schlüssel (gelöscht) bleiben aus. Liefert die Zahl der zugeordneten
- * Buchungen je Kategorie, die meisten zuerst: [{ name, count }].
+ * Ordnet Ausgaben in „Sonstiges“ automatisch zu, deren Kategorie niemand von Hand gewählt hat und die keiner gemerkten
+ * Zuordnung folgen (siehe rules.js), mit importId nur die dieses Imports. Gruppen ohne Kategorie mit ihrem Schlüssel
+ * (gelöscht) bleiben aus. Liefert die Zahl der zugeordneten Buchungen je Kategorie, die meisten zuerst: [{ name, count }].
  */
 async function autoCategorize(db, importId = null) {
   const { rows: targets } = await db.query(
@@ -126,7 +126,8 @@ async function autoCategorize(db, importId = null) {
   const names = new Map(targets.map((t) => [t.key, t.name]));
   const { rows } = await db.query(
     `SELECT t.id, t.counterparty, t.details->>'mcc' AS mcc FROM transactions t
-     WHERE t.category = $1 AND NOT t.category_manual AND ${KIND} = 'out' AND ($2::int IS NULL OR t.import_id = $2)`,
+     WHERE t.category = $1 AND NOT t.category_manual AND t.rule_id IS NULL AND ${KIND} = 'out'
+       AND ($2::int IS NULL OR t.import_id = $2)`,
     [FALLBACK_CATEGORY, importId]);
   const ids = new Map();
   for (const row of rows) {

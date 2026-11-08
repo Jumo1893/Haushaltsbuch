@@ -2,13 +2,19 @@ import { useState } from "react";
 import {
   deleteTransaction,
   fetchTransactions,
+  saveTransaction,
   searchTransactions,
-  updateTransaction,
   updateTransactions,
 } from "../api";
 import { OFFLINE, useData, useLoad } from "../data";
 import { bookings } from "../format";
-import { isFiltered, type Transaction, type TransactionChanges, type TransactionFilters } from "../types";
+import {
+  isFiltered,
+  type RememberMode,
+  type Transaction,
+  type TransactionChanges,
+  type TransactionFilters,
+} from "../types";
 import BalanceCard from "./BalanceCard";
 import BulkEditDialog, { type BulkUpdate } from "./BulkEditDialog";
 import CategoryBreakdown from "./CategoryBreakdown";
@@ -62,12 +68,25 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
   };
 
   // Fehler beim Speichern zeigen die Dialoge selbst an
-  const handleUpdate = async (tx: Transaction, changes: TransactionChanges) => {
-    const updated = await updateTransaction(tx.id, changes);
-    if (selected.has(tx.id)) select([updated], true);
-    const target = updated.date.slice(0, 7);
-    if (!filters && target !== month) onMonthChange(target);
-    refresh();
+  const handleUpdate = async (tx: Transaction, changes: TransactionChanges, remember: RememberMode | null) => {
+    try {
+      const { updated, assigned } = await saveTransaction(tx.id, changes, remember);
+      if (updated) {
+        if (selected.has(tx.id)) select([updated], true);
+        const target = updated.date.slice(0, 7);
+        if (!filters && target !== month) onMonthChange(target);
+      }
+      if (assigned !== null) {
+        setSaved(
+          assigned
+            ? `Zuordnung gemerkt und auf ${assigned} weitere ${assigned === 1 ? "Buchung" : "Buchungen"} übertragen.`
+            : "Zuordnung für künftige Buchungen gemerkt.",
+        );
+      }
+    } finally {
+      // Auch wenn nur das Merken scheitert, ist die Buchung schon geändert
+      refresh();
+    }
   };
 
   const handleBulkUpdate = async (updates: BulkUpdate[]) => {
@@ -154,7 +173,7 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
           tx={editing}
           accounts={accounts}
           onCreateAccount={createAccount}
-          onSave={(changes) => handleUpdate(editing, changes)}
+          onSave={(changes, remember) => handleUpdate(editing, changes, remember)}
           onClose={() => setEditing(null)}
         />
       )}

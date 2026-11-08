@@ -16,9 +16,13 @@ import type {
   NewTransaction,
   PriceResult,
   ProfileMismatch,
+  RememberMode,
+  Rule,
+  RulePreview,
   Transaction,
   TransactionChanges,
   TransactionFilters,
+  TxKind,
 } from "./types";
 
 /** Fehlerantwort der API; `body` enthält die Meldung des Servers, falls vorhanden. */
@@ -89,6 +93,36 @@ export const updateTransactions = (ids: number[], changes: BulkChanges) =>
   });
 
 export const deleteTransaction = (id: number) => request<null>(`transactions/${id}`, { method: "DELETE" });
+
+export const fetchRules = () => request<Rule[]>("rules");
+
+/** Was eine gemerkte Zuordnung aus der Buchung bewirken würde, wenn sie die Art kind hat */
+export const previewRule = (transactionId: number, kind: TxKind) =>
+  request<RulePreview>(`rules/preview?transaction=${transactionId}&kind=${kind}`);
+
+/**
+ * Merkt Kategorie und Rhythmus der Buchung für alle Buchungen derselben Gegenpartei, auch die bisherigen;
+ * `assigned` ist die Zahl der anderen Buchungen, die sich dadurch geändert haben
+ */
+export const createRule = (transactionId: number, mode: RememberMode) =>
+  request<{ rule: Rule; assigned: number }>("rules", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transactionId, matchAmount: mode === "amount" }),
+  });
+
+/** Löscht eine gemerkte Zuordnung; ihre Buchungen bekommen wieder, was sonst für sie gilt */
+export const deleteRule = (id: number) => request<null>(`rules/${id}`, { method: "DELETE" });
+
+/**
+ * Speichert die Änderungen einer Buchung und merkt danach auf Wunsch ihre Zuordnung. Liefert die geänderte Buchung
+ * (ohne Änderungen null) und die Zahl der anderen Buchungen, die die gemerkte Zuordnung bekommen haben (ohne null).
+ */
+export async function saveTransaction(id: number, changes: TransactionChanges, remember: RememberMode | null) {
+  const updated = Object.keys(changes).length ? await updateTransaction(id, changes) : null;
+  const assigned = remember ? (await createRule(id, remember)).assigned : null;
+  return { updated, assigned };
+}
 
 export const fetchAccounts = () => request<Account[]>("accounts");
 

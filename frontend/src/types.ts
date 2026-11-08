@@ -43,6 +43,29 @@ export interface Transaction extends NewTransaction {
   counterparty: string;
   purpose: string;
   importId: number | null; // gesetzt, wenn die Buchung aus einem CSV-Import stammt
+  ruleId: number | null; // gemerkte Zuordnung, der die Buchung folgt
+}
+
+/** Für welche Buchungen einer Gegenpartei eine Zuordnung gemerkt wird: nur mit dem Betrag der Buchung oder mit jedem */
+export type RememberMode = "amount" | "any";
+
+/** Gemerkte Zuordnung: Kategorie und Rhythmus für alle Buchungen einer Art, Richtung und Gegenpartei */
+export interface Rule {
+  id: number;
+  kind: TxKind;
+  type: TxType;
+  counterparty: string;
+  amount: number | null; // nur bei diesem Betrag; null: bei jedem
+  category: string;
+  rhythm: Rhythm | null;
+  transactionCount: number; // Buchungen, die ihr gerade folgen
+}
+
+/** Was eine gemerkte Zuordnung aus einer Buchung bewirken würde */
+export interface RulePreview {
+  sameAmount: number; // andere Buchungen mit ihrem Betrag, die sie bekämen
+  anyAmount: number; // andere Buchungen, die sie bei jedem Betrag bekämen
+  rules: Rule[]; // bisher gemerkte Zuordnungen, die für die Buchung gelten, die mit ihrem Betrag zuerst
 }
 
 export const kindOf = ({ type, transfer }: Pick<NewTransaction, "type" | "transfer">): TxKind =>

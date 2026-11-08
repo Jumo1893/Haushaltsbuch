@@ -26,6 +26,8 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
 - Importierte Ausgaben automatisch zuordnen: Einkäufe bei bekannten Supermarktketten zu „Lebensmittel“,
   Kartenzahlungen mit Händlerart (MCC, z. B. von Trade Republic) nach der Art des Händlers (siehe „Automatische
   Kategorien“)
+- Zuordnungen merken: Kategorie und Rhythmus einer Buchung für künftige und bisherige Buchungen derselben Gegenpartei
+  übernehmen, wahlweise nur bei gleichem Betrag, z. B. für ein Abo (siehe „Gemerkte Zuordnungen“)
 - Mehrere Konten, z. B. Girokonto, Tagesgeld und Trade Republic; jede Buchung gehört zu genau einem Konto (siehe „Konten“)
 - Depot aus dem Trade-Republic-Export, getrennt vom Geldkonto: Bestände, Einstand, Gewinne, Erträge, Anlageklassen und
   alle Bewegungen, mit aktuellen Kursen auf Knopfdruck oder an jedem Werktag (siehe „Depot“)
@@ -172,11 +174,15 @@ direkt in jeder Kategorieauswahl unter „Neue Kategorie anlegen …“ anlegen.
   sich nicht rückgängig machen. So lassen sich auch zwei Kategorien zusammenlegen.
 - **Automatisch:** Bei Kategorien, die importierte Ausgaben automatisch bekommen, steht, welche das sind (siehe
   „Automatische Kategorien“).
+- **Gemerkte Zuordnungen:** Unter den Kategorien stehen die gemerkten Zuordnungen mit Gegenpartei, Betrag, Art,
+  Kategorie, Rhythmus und der Zahl der Buchungen, die ihnen folgen. Beim Löschen gehen diese Buchungen zurück (siehe
+  „Gemerkte Zuordnungen“).
 - **„Sonstiges“** ist fest und lässt sich weder umbenennen noch löschen, denn hier landen importierte Buchungen, die
   sich nicht automatisch zuordnen lassen.
 
 Eine Kategorie gehört zur Art der Buchung: „Sonstiges“ gibt es dreimal, Änderungen gelten nur für die jeweilige Art. Wird
-eine Buchung später zur Umbuchung, behält sie ihre Kategorie, auch wenn die Liste der Umbuchungen sie nicht enthält.
+eine Buchung später zur Umbuchung, behält sie ihre Kategorie, auch wenn die Liste der Umbuchungen sie nicht enthält. Hat
+sie die Kategorie von einer gemerkten Zuordnung, geht sie beim nächsten Start des Backends zurück nach „Sonstiges“.
 
 **Import** (`/import`): der CSV-Import (siehe „CSV-Import“) und die letzten 50 Importe mit Datum, Datei, Anzahlen und
 den Konten, in die sie Umsätze übernommen haben.
@@ -261,14 +267,16 @@ Kategorie einmalig zu Umbuchungen mit der Kategorie „Sonstiges“.
 
 ### Rhythmus
 Jede Buchung, gleich welcher Art, kann einen Rhythmus tragen: monatlich, quartalsweise, halbjährlich oder jährlich. Ohne
-Angabe gilt sie als einmalig. Das ist auch der Stand aller importierten Buchungen, der Import setzt keinen Rhythmus.
+Angabe gilt sie als einmalig. Das ist auch der Stand importierter Buchungen, der Import setzt einen Rhythmus nur über
+eine gemerkte Zuordnung (siehe „Gemerkte Zuordnungen“).
 
 Der Rhythmus lässt sich beim Erfassen und Bearbeiten wählen, auch bei importierten Buchungen. Um z. B. alle Mietzahlungen
 zu kennzeichnen, nach ihnen suchen, alle auswählen und unter „Bearbeiten“ den Rhythmus setzen. In den Listen steht er
 neben der Kategorie, und die Buchungen lassen sich danach filtern.
 
-Der Rhythmus ist nur eine Angabe an der einzelnen Buchung. Künftige Buchungen entstehen dadurch nicht, und auf Summen,
-Kontostände und Diagramme hat er keinen Einfluss.
+Der Rhythmus ist nur eine Angabe an der einzelnen Buchung. Die App legt dadurch keine Buchungen an, und auf Summen,
+Kontostände und Diagramme hat er keinen Einfluss. Eine gemerkte Zuordnung überträgt ihn auf weitere Buchungen derselben
+Gegenpartei.
 
 ## Depot
 Der Export von Trade Republic mischt Geld und Wertpapiere in einer Datei. Die App trennt das in zwei Konten:
@@ -356,12 +364,14 @@ von der Seite eines Kontos, ist dieses Konto für Umsätze ohne eigene IBAN scho
    fehlerhaft sind (mit Zeilennummer und Grund), dazu die ersten Datensätze und die Konten, in die sie gehen.
    Enthält die Datei keine IBAN des eigenen Kontos, wird hier das Konto gewählt.
 4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung mit Links zu den Konten und den
-   automatisch zugeordneten Umsätzen je Kategorie, und der Import steht unter „Bisherige Importe“.
+   automatisch oder über gemerkte Zuordnungen zugeordneten Umsätzen je Kategorie, und der Import steht unter
+   „Bisherige Importe“.
 
 Regeln:
 - **Buchungen:** Jeder gültige Datensatz wird eine Buchung, mit negativem Betrag als Ausgabe, mit positivem als
-  Einnahme. Ausgaben bekommen ihre Kategorie wenn möglich automatisch (siehe „Automatische Kategorien“), alle anderen
-  Buchungen landen in „Sonstiges“. Gegenpartei und Verwendungszweck werden mitgespeichert und in der
+  Einnahme. Passt eine gemerkte Zuordnung, bekommt die Buchung deren Kategorie und Rhythmus (siehe „Gemerkte
+  Zuordnungen“). Sonst bekommen Ausgaben ihre Kategorie wenn möglich automatisch (siehe „Automatische Kategorien“),
+  alle anderen Buchungen landen in „Sonstiges“. Gegenpartei und Verwendungszweck werden mitgespeichert und in der
   Buchungsliste angezeigt, weitere Angaben (z. B. IBAN, Buchungstext, ISIN) in der Spalte `details`.
   Stehen Gebühr und Steuer in eigenen Spalten, sind sie im Betrag der Buchung enthalten.
 - **Konten:** Umsätze mit eigener IBAN gehen in das Konto mit dieser IBAN, ein unbekanntes Konto legt der Import an.
@@ -389,6 +399,37 @@ Regeln:
   nicht im Log. Texte, die eine Tabellenkalkulation als Formel lesen würde (Beginn mit `=`, `+`, `-` oder `@`),
   werden mit vorangestelltem `'` gespeichert. Das schützt vor CSV-/Formel-Injection bei einem späteren Export.
 
+### Gemerkte Zuordnungen
+Beim Bearbeiten einer importierten Buchung steht unter dem Rhythmus die Auswahl „Künftige Buchungen von …“ mit der
+Gegenpartei. Damit bekommen andere Buchungen derselben Gegenpartei Kategorie und Rhythmus dieser Buchung:
+- **Nicht übernehmen:** Die Änderung gilt nur für diese Buchung.
+- **Nur bei 21,42 € übernehmen:** nur Buchungen mit genau diesem Betrag, z. B. für ein Abo. Nach einer Preisänderung
+  landet die nächste Buchung wieder in „Sonstiges“, und für den neuen Betrag lässt sich die Zuordnung erneut merken. So
+  lassen sich auch Abos auseinanderhalten, die über PayPal laufen und deshalb alle dieselbe Gegenpartei haben.
+- **Bei jedem Betrag übernehmen:** alle Buchungen der Gegenpartei, z. B. für den Bäcker oder das Gehalt.
+
+Vorausgewählt ist „Nur bei … übernehmen“, wenn Kategorie oder Rhythmus geändert sind und die Buchung einen Rhythmus hat.
+Folgt sie schon einer gemerkten Zuordnung, ist deren Auswahl vorausgewählt, sonst „Nicht übernehmen“. Unter der Auswahl
+steht, wie viele bisherige Buchungen die Zuordnung sofort bekommen und ob sie eine bisher gemerkte ersetzt. Nach dem
+Speichern nennen die Seiten „Buchungen“ und „Konto“, auf wie viele Buchungen sie übertragen wurde.
+
+Regeln:
+- **Gleiche Buchung:** gleiche Art (Ausgabe, Einnahme, Umbuchung), gleiche Richtung und gleiche Gegenpartei, ohne
+  Unterschied bei Groß- und Kleinschreibung und Leerraum, mit „Nur bei …“ auch derselbe Betrag. Die Zuordnung mit Betrag
+  geht der ohne vor. Je Art, Richtung, Gegenpartei und Betrag gibt es eine Zuordnung, erneutes Merken ersetzt sie.
+- **Welche Buchungen:** alle, auch die bisherigen, deren Kategorie niemand von Hand gewählt und deren Rhythmus niemand
+  von Hand gesetzt hat. Die bearbeitete Buchung selbst und jede andere von Hand bearbeitete bleiben, wie sie sind. Wer
+  Kategorie oder Rhythmus einer Buchung von Hand ändert, auch über „Bearbeiten“ für mehrere, löst sie von ihrer
+  Zuordnung (`rule_id`).
+- **Wann:** sofort beim Merken, beim Import für die neuen Umsätze und bei jedem Start des Backends. Passt eine
+  Zuordnung nicht mehr, z. B. weil die Buchung inzwischen als Umbuchung gilt, geht die Buchung zurück nach „Sonstiges“.
+- **Vorrang:** Gemerkte Zuordnungen gehen den automatischen Kategorien vor, auch wenn sie „Sonstiges“ vorgeben.
+- **Löschen:** auf der Seite „Kategorien“. Die Buchungen, die der Zuordnung folgen, gehen zurück nach „Sonstiges“, ohne
+  Rhythmus. Danach gilt, was sonst passt: eine andere gemerkte Zuordnung derselben Gegenpartei oder die automatische
+  Kategorie.
+- **Kategorien:** Die Zuordnung hängt an der Kategorie, Umbenennen ändert sie mit. Wird die Kategorie gelöscht, zeigt
+  die Zuordnung auf die Kategorie, in die ihre Buchungen wandern.
+
 ### Automatische Kategorien
 Importierte Ausgaben bekommen ihre Kategorie automatisch, wenn eins von beidem zutrifft. Die Händlerart hat Vorrang,
 so ist z. B. die Tankstelle eines Supermarkts „Mobilität“.
@@ -407,7 +448,8 @@ so ist z. B. die Tankstelle eines Supermarkts „Mobilität“.
 Regeln:
 - **Wann:** beim Import für die neuen Umsätze und bei jedem Start des Backends für alle Ausgaben in „Sonstiges“. So
   gilt eine erweiterte Tabelle auch für frühere Importe.
-- **Was:** nur Ausgaben in „Sonstiges“, deren Kategorie niemand von Hand gewählt hat. Wer eine Kategorie setzt, auch
+- **Was:** nur Ausgaben in „Sonstiges“, deren Kategorie niemand von Hand gewählt hat und die keiner gemerkten Zuordnung
+  folgen. Wer eine Kategorie setzt, auch
   zurück auf „Sonstiges“ und auch über „Bearbeiten“ für mehrere Buchungen, legt sie fest (`category_manual`). Einnahmen
   und Umbuchungen bleiben, wie sie sind.
 - **Umbenennen:** Die Zuordnung hängt an der Kategorie, nicht an ihrem Namen (`categories.auto_key`). Aus
@@ -502,7 +544,7 @@ Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neu
 Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
 Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
 Duplikaterkennung, Zuordnung zu Konten), die automatischen Kategorien (Händlerarten, Supermärkte, von Hand gewählte
-Kategorien) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
+Kategorien), die gemerkten Zuordnungen (Merken, Löschen, Vorschau) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
 laufen mit dem Test-Runner von Node.js 20+ und brauchen weder Datenbank noch Netz; die Antworten von Lang & Schwarz und
 Kraken sind nachgestellt:
 ```
@@ -520,6 +562,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── accounts.js           Konten: Prüfung der Eingaben, IBAN, Zuordnung beim Import
 │   ├── categories.js         Kategorien: Standardliste und Prüfung der Eingaben
 │   ├── autocategories.js     Automatische Kategorien: Händlerarten (MCC) und Supermärkte
+│   ├── rules.js              Gemerkte Zuordnungen: Merken, Anwenden, Vorschau, Löschen
 │   ├── stats.js              Auswertungen: Kontostände, Umbuchungen, Werte je Monat
 │   ├── depot.js              Depot: Wertpapierbewegungen, Bestände, Einstand, Gewinne, Depotwert im Zeitverlauf
 │   ├── quotes.js             Aktuelle Kurse von Lang & Schwarz und Kraken abrufen und speichern
@@ -547,8 +590,8 @@ Die Testdateien enthalten nur erfundene Daten.
         │                     ImportPage
         └── components/       MonthNav, BookingsView, BookingFilters, MonthKpis,
             │                 BalanceCard, CategoryBreakdown, TopPayees,
-            │                 TransactionList, TransactionForm, NewTransactionDialog,
-            │                 EditTransactionDialog, BulkEditDialog, AccountCard,
+            │                 TransactionList, TransactionForm, RememberField, NewTransactionDialog,
+            │                 EditTransactionDialog, BulkEditDialog, DeleteRuleDialog, AccountCard,
             │                 AccountDialog, AccountSelect, ReconcileDialog, Segmented,
             │                 CategorySelect, CategoryDialog, DeleteCategoryDialog,
             │                 CsvImport, ImportPreview, ImportHistory,
@@ -589,6 +632,7 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | `account_id` | `INTEGER`       | Verweis auf `accounts.id`, Pflicht |
 | `transfer_override` | `BOOLEAN` | Umbuchung von Hand festgelegt (ja oder nein), leer: automatisch erkennen (siehe „Umbuchungen“) |
 | `rhythm`     | `TEXT`          | `monthly`, `quarterly`, `semiannual` oder `yearly`, leer: einmalig (siehe „Rhythmus“) |
+| `rule_id`    | `INTEGER`       | Verweis auf `rules.id`: gemerkte Zuordnung, der die Buchung folgt, leer: keine (siehe „Gemerkte Zuordnungen“) |
 
 ### Tabelle `accounts`
 Ein Eintrag je Konto.
@@ -662,6 +706,23 @@ Ein Eintrag je Kategorie und Art. Buchungen speichern den Namen der Kategorie in
 | `name` | `TEXT`   | max. 40 Zeichen, je Art nur einmal |
 | `auto_key` | `TEXT` | Gruppe von Ausgaben, die die Kategorie automatisch bekommt, z. B. `food`; je Gruppe höchstens eine Kategorie, leer: keine |
 
+### Tabelle `rules`
+Ein Eintrag je gemerkter Zuordnung (siehe „Gemerkte Zuordnungen“).
+
+| Spalte         | Typ             | Hinweis |
+|----------------|-----------------|---------|
+| `id`           | `SERIAL`        | Primärschlüssel |
+| `kind`         | `TEXT`          | Art der Buchungen: `out`, `in` oder `transfer` |
+| `type`         | `TEXT`          | Richtung der Buchungen: `in` oder `out` |
+| `counterparty` | `TEXT`          | Gegenpartei wie in der Buchung, aus der die Zuordnung stammt |
+| `match_key`    | `TEXT`          | Gegenpartei zum Vergleichen: klein geschrieben, ohne doppelten Leerraum |
+| `amount`       | `NUMERIC(12,2)` | nur Buchungen mit diesem Betrag, leer: jeder Betrag |
+| `category_id`  | `INTEGER`       | Verweis auf `categories.id`, eine Kategorie der Art `kind` |
+| `rhythm`       | `TEXT`          | Rhythmus wie in `transactions.rhythm`, leer: einmalig |
+| `created_at`   | `TIMESTAMPTZ`   | Zeitpunkt des ersten Merkens |
+
+Je `kind`, `type`, `match_key` und `amount` gibt es höchstens einen Eintrag.
+
 ### Tabelle `imports`
 Ein Eintrag je Importvorgang.
 
@@ -718,7 +779,11 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/categories`                    | Kategorien aller Arten, „Sonstiges“ jeweils zuletzt |
 | `POST`   | `/api/categories`                    | Kategorie anlegen, liefert sie mit `201` zurück |
 | `PATCH`  | `/api/categories/:id`                | Kategorie umbenennen, ihre Buchungen ändern sich mit; liefert die geänderte Kategorie |
-| `DELETE` | `/api/categories/:id?moveTo=ID`      | Kategorie löschen, `204`. Ihre Buchungen wandern in die Kategorie `moveTo` derselben Art, ohne Angabe in „Sonstiges“ |
+| `DELETE` | `/api/categories/:id?moveTo=ID`      | Kategorie löschen, `204`. Ihre Buchungen und gemerkten Zuordnungen wandern in die Kategorie `moveTo` derselben Art, ohne Angabe in „Sonstiges“ |
+| `GET`    | `/api/rules`                         | Gemerkte Zuordnungen, nach Gegenpartei |
+| `GET`    | `/api/rules/preview?transaction=ID&kind=out` | Was eine gemerkte Zuordnung aus der Buchung bewirken würde, wenn sie die Art `kind` hat (optional, ohne Angabe ihre jetzige) |
+| `POST`   | `/api/rules`                         | Kategorie und Rhythmus einer Buchung für ihre Gegenpartei merken, liefert `201` |
+| `DELETE` | `/api/rules/:id`                     | Gemerkte Zuordnung löschen, `204`; ihre Buchungen gehen zurück |
 | `GET`    | `/api/import-profiles`               | Importprofile und maximale Dateigröße |
 | `GET`    | `/api/imports`                       | Die letzten 50 Importe, neueste zuerst, mit den Konten, in die sie Umsätze übernommen haben |
 | `POST`   | `/api/imports/preview?profile=ID`    | Datei prüfen und Vorschau liefern, speichert nichts |
@@ -732,18 +797,32 @@ Body für `POST /api/transactions`:
 Buchung eine Umbuchung ist; ohne Angabe wird das automatisch erkannt. Ebenfalls optional ist `rhythm`: `monthly`,
 `quarterly`, `semiannual`, `yearly` oder `null` für einmalig.
 Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`, auch wenn es das Konto nicht gibt.
-Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`)
-sowie `transfer`: `true` bei einer Umbuchung zwischen eigenen Konten, von Hand festgelegt oder erkannt (siehe
-„Umbuchungen“).
+Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`),
+`transfer`: `true` bei einer Umbuchung zwischen eigenen Konten, von Hand festgelegt oder erkannt (siehe
+„Umbuchungen“), und `ruleId`: die gemerkte Zuordnung, der die Buchung folgt, sonst `null`.
 
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
 `{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category`, `note`,
-`rhythm` und `transfer` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`.
+`rhythm` und `transfer` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`. Wer `category`
+oder `rhythm` angibt, löst die Buchung von ihrer gemerkten Zuordnung, das gilt auch für `PATCH /api/transactions`.
 
 Body für `PATCH /api/transactions`: die IDs und die Änderung, z. B.
 `{ "ids": [12, 57, 103], "changes": { "category": "Lebensmittel", "note": "Einkauf beim Supermarkt" } }`. In `changes`
 sind nur `category`, `note`, `rhythm` und `transfer` erlaubt, sonst antwortet das Backend mit `400`. IDs, die es nicht
 (mehr) gibt, werden übergangen, `updated` nennt die Zahl der geänderten Buchungen.
+
+Body für `POST /api/rules`: `{ "transactionId": 12, "matchAmount": true }`. Gemerkt werden Art, Richtung, Gegenpartei,
+Kategorie und Rhythmus der Buchung, mit `matchAmount` auch ihr Betrag. Die Antwort enthält die Zuordnung und unter
+`assigned` die Zahl der anderen Buchungen, die sich dadurch geändert haben, z. B.
+`{ "rule": { "id": 3, "kind": "out", "type": "out", "counterparty": "ANTHROPIC* CLAUDE SUB", "amount": 21.42,
+"category": "Freizeit", "rhythm": "monthly", "transactionCount": 4 }, "assigned": 3 }`. `amount` ist `null` bei
+jedem Betrag, `transactionCount` die Zahl der Buchungen, die der Zuordnung folgen; so sieht auch jeder Eintrag von
+`GET /api/rules` aus. Buchung ohne Gegenpartei: `400`, unbekannte Buchung: `404`, Kategorie der Buchung gibt es für
+ihre Art nicht: `409`.
+
+`GET /api/rules/preview` liefert z. B. `{ "sameAmount": 11, "anyAmount": 14, "rules": [...] }`: wie viele andere
+Buchungen die Zuordnung mit dem Betrag der Buchung bzw. bei jedem Betrag bekämen und welche gemerkten Zuordnungen schon
+für die Buchung gelten, die mit ihrem Betrag zuerst.
 
 Body für `POST /api/accounts` (`institution`, `iban` und `extraIbans` sind optional):
 ```json
@@ -801,8 +880,8 @@ Die Vorschau nennt unter `accounts` je eigener IBAN das Konto und die Zahl der n
 `{ "iban": "DE89370400440532013000", "accountId": 1, "accountName": "Girokonto", "new": 12, "duplicate": 0 }`.
 `accountId` ist `null`, wenn der Import das Konto erst anlegt. Datensätze ohne IBAN stehen unter `"iban": null`, für
 sie braucht der Import `account`. Die Zusammenfassung des Imports nennt unter `accounts` die Konten mit der Zahl
-der importierten Umsätze und ob sie neu angelegt wurden. Unter `autoCategorized` stehen die automatisch zugeordneten
-Umsätze je Kategorie, die meisten zuerst, z. B. `[{ "name": "Lebensmittel", "count": 12 }]`; die übrigen stehen in
+der importierten Umsätze und ob sie neu angelegt wurden. Unter `autoCategorized` stehen die automatisch oder über
+gemerkte Zuordnungen zugeordneten Umsätze je Kategorie, die meisten zuerst, z. B. `[{ "name": "Lebensmittel", "count": 12 }]`; die übrigen stehen in
 der Kategorie `category`.
 
 Die Wertpapierbewegungen stehen in der Vorschau unter `depot`, z. B. `{ "new": 120, "duplicate": 0, "positions": 12 }`, und
