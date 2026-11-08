@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { deleteCategory, renameCategory } from "../api";
+import { deleteCategory, deleteRule, fetchRules, renameCategory } from "../api";
 import CategoryDialog from "../components/CategoryDialog";
 import DeleteCategoryDialog from "../components/DeleteCategoryDialog";
-import { useData } from "../data";
-import { bookings } from "../format";
+import DeleteRuleDialog from "../components/DeleteRuleDialog";
+import { useData, useLoad } from "../data";
+import { bookings, eur } from "../format";
 import { useTitle } from "../router";
-import type { Category, TxKind } from "../types";
+import { rhythmLabel, type Category, type Rule, type TxKind } from "../types";
 
 const SECTIONS: [TxKind, string][] = [
   ["out", "Ausgaben"],
@@ -13,12 +14,25 @@ const SECTIONS: [TxKind, string][] = [
   ["transfer", "Umbuchungen"],
 ];
 
-/** Kategorien je Art anlegen, umbenennen und löschen */
+/** Art der Buchungen einer gemerkten Zuordnung, bei Umbuchungen mit Richtung */
+const ruleKind = ({ kind, type }: Rule) =>
+  kind === "out" ? "Ausgabe" : kind === "in" ? "Einnahme" : `Umbuchung (${type === "out" ? "Abbuchung" : "Gutschrift"})`;
+
+/** z. B. „Nur bei 21,42 € · Ausgabe → Freizeit, monatlich“ */
+const ruleSummary = (rule: Rule) =>
+  [
+    rule.amount === null ? "Jeder Betrag" : `Nur bei ${eur.format(rule.amount)}`,
+    `${ruleKind(rule)} → ${rule.category}, ${rule.rhythm ? rhythmLabel(rule.rhythm).toLowerCase() : "einmalig"}`,
+  ].join(" · ");
+
+/** Kategorien je Art anlegen, umbenennen und löschen; gemerkte Zuordnungen ansehen und löschen */
 export default function CategoriesPage() {
   const { categories, createCategory, loaded, refresh } = useData();
+  const rules = useLoad(fetchRules, []);
   const [creating, setCreating] = useState<TxKind | null>(null);
   const [renaming, setRenaming] = useState<Category | null>(null);
   const [deleting, setDeleting] = useState<Category | null>(null);
+  const [forgetting, setForgetting] = useState<Rule | null>(null);
   useTitle("Kategorien");
 
   if (!loaded) return null;
@@ -31,6 +45,11 @@ export default function CategoriesPage() {
 
   const remove = async (category: Category, moveTo: number) => {
     await deleteCategory(category.id, moveTo);
+    refresh();
+  };
+
+  const forget = async (rule: Rule) => {
+    await deleteRule(rule.id);
     refresh();
   };
 
@@ -54,7 +73,10 @@ export default function CategoriesPage() {
                 <li key={c.id}>
                   <div>
                     {c.name}
-                    <small>{bookings(c.transactionCount)}</small>
+                    <small>
+                      {bookings(c.transactionCount)}
+                      {c.auto && ` · automatisch: ${c.auto}`}
+                    </small>
                   </div>
                   {c.fixed ? (
                     <span className="badge">Fest</span>
@@ -73,9 +95,42 @@ export default function CategoriesPage() {
           </ul>
         </section>
       ))}
+      <section>
+        <h2>Gemerkte Zuordnungen</h2>
+        {rules.data && rules.data.length > 0 && (
+          <ul className="rows rules">
+            {rules.data.map((r) => (
+              <li key={r.id}>
+                <div>
+                  {r.counterparty}
+                  <small>
+                    {ruleSummary(r)} · {bookings(r.transactionCount)}
+                  </small>
+                </div>
+                <button className="ghost small danger" onClick={() => setForgetting(r)}>
+                  Löschen
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {rules.data?.length === 0 && (
+          <p className="empty">
+            Noch keine. Beim Bearbeiten einer importierten Buchung lässt sich wählen, dass künftige Buchungen derselben
+            Gegenpartei genauso zugeordnet werden.
+          </p>
+        )}
+        {rules.failed && <p className="empty">Die gemerkten Zuordnungen konnten nicht geladen werden.</p>}
+      </section>
       <p className="hint">
-        „Sonstiges“ ist fest: Hier landen importierte Buchungen, und beim Löschen einer Kategorie ist es die Vorauswahl
-        für ihre Buchungen.
+        Gemerkte Zuordnungen gelten für alle Buchungen ihrer Gegenpartei, deren Kategorie nicht von Hand gewählt ist, auch
+        für bisherige. Danach werden importierte Ausgaben automatisch zugeordnet, wenn die Gegenpartei eine bekannte
+        Supermarktkette ist oder die Kartenzahlung eine passende Händlerart mitbringt (MCC, z. B. bei Trade Republic). Beides
+        gilt auch nach dem Umbenennen der Kategorie. Eine von Hand gewählte Kategorie bleibt, wie sie ist.
+      </p>
+      <p className="hint">
+        „Sonstiges“ ist fest: Hier landen importierte Buchungen, die sich nicht automatisch zuordnen lassen, und beim
+        Löschen einer Kategorie ist es die Vorauswahl für ihre Buchungen.
       </p>
 
       {creating && (
@@ -92,6 +147,15 @@ export default function CategoriesPage() {
           name={renaming.name}
           onSave={(name) => rename(renaming, name)}
           onClose={() => setRenaming(null)}
+        />
+      )}
+      {forgetting && (
+        <DeleteRuleDialog
+          key={forgetting.id}
+          rule={forgetting}
+          summary={ruleSummary(forgetting)}
+          onDelete={() => forget(forgetting)}
+          onClose={() => setForgetting(null)}
         />
       )}
       {deleting && (

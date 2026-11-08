@@ -16,6 +16,16 @@ const {
 } = require("./transactions");
 const { KINDS, normalizeIban, readAccount, accountsForIbans } = require("./accounts");
 const { KINDS: CATEGORY_KINDS, FALLBACK_CATEGORY, DEFAULT_CATEGORIES, readCategory } = require("./categories");
+const { SEED_AUTO_KEYS, autoLabelSql, autoCategorize } = require("./autocategories");
+const {
+  applyRules,
+  listRules,
+  rememberRule,
+  forgetRule,
+  previewRule,
+  readRuleInput,
+  readPreviewQuery,
+} = require("./rules");
 const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
 const { withDepots, withDepotMonths, withDepotDays, depotView, refreshDepot } = require("./depot");
 const { startSchedule, autoPriceState, setAutoPrices } = require("./schedule");
@@ -29,11 +39,11 @@ app.use(express.json());
 
 const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
   to_char(t.date, 'YYYY-MM-DD') AS date, t.note, t.counterparty, t.purpose, t.import_id AS "importId",
-  t.account_id AS "accountId", ${TRANSFER} AS transfer, t.rhythm FROM transactions t`;
+  t.account_id AS "accountId", ${TRANSFER} AS transfer, t.rhythm, t.rule_id AS "ruleId" FROM transactions t`;
 
-// Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen
+// Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen; auto: was sie automatisch bekommt
 const CATEGORIES = `SELECT c.id, c.kind, c.name, c.name = '${FALLBACK_CATEGORY}' AS fixed,
-  COALESCE(u.count, 0)::int AS "transactionCount"
+  ${autoLabelSql("c.auto_key")} AS auto, COALESCE(u.count, 0)::int AS "transactionCount"
   FROM categories c LEFT JOIN (
     SELECT t.category, ${KIND} AS kind, count(*) AS count FROM transactions t GROUP BY 1, 2
   ) u ON u.category = c.name AND u.kind = c.kind`;
@@ -154,7 +164,49 @@ const SCHEMA = [
     failed JSONB NOT NULL DEFAULT '[]'
   )`,
   "CREATE INDEX IF NOT EXISTS idx_auto_price_runs ON auto_price_runs(account_id, due)",
+  // Kategorie, die bestimmte Ausgaben automatisch bekommt (siehe autocategories.js); bleibt beim Umbenennen erhalten
+  "ALTER TABLE categories ADD COLUMN IF NOT EXISTS auto_key TEXT UNIQUE",
+  SEED_AUTO_KEYS,
+  // Kategorie von Hand gewählt: Die automatische Zuordnung lässt die Buchung in Ruhe. Beim Einführen der Spalte gilt das
+  // für von Hand erfasste Buchungen und für importierte, die schon nicht mehr in der Auffangkategorie stehen.
+  "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_manual BOOLEAN",
+  `UPDATE transactions SET category_manual = (import_id IS NULL OR category <> '${FALLBACK_CATEGORY}')
+   WHERE category_manual IS NULL`,
+  "ALTER TABLE transactions ALTER COLUMN category_manual SET DEFAULT false, ALTER COLUMN category_manual SET NOT NULL",
+  // Gemerkte Zuordnungen (siehe rules.js): Kategorie und Rhythmus für alle Buchungen einer Art, Richtung und Gegenpartei,
+  // wahlweise nur bei einem Betrag (amount, leer: jeder Betrag). match_key ist die Gegenpartei zum Vergleichen.
+  `CREATE TABLE IF NOT EXISTS rules (
+    id SERIAL PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN (${CATEGORY_KINDS.map((k) => `'${k}'`).join(",")})),
+    type TEXT NOT NULL CHECK (type IN ('in','out')),
+    counterparty TEXT NOT NULL,
+    match_key TEXT NOT NULL CHECK (match_key <> ''),
+    amount NUMERIC(12,2) CHECK (amount > 0),
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    rhythm TEXT CHECK (rhythm IN (${RHYTHMS.map((r) => `'${r}'`).join(",")})),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE NULLS NOT DISTINCT (kind, type, match_key, amount)
+  )`,
+  // Gemerkte Zuordnung, der die Buchung folgt; leer: keiner
+  "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS rule_id INTEGER REFERENCES rules(id) ON DELETE SET NULL",
+  "CREATE INDEX IF NOT EXISTS idx_tx_rule_id ON transactions(rule_id)",
 ];
+
+/** Führt fn mit einer eigenen Verbindung in einer Datenbanktransaktion aus und liefert ihr Ergebnis */
+async function inTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
 /**
  * Ordnet Buchungen aus der Zeit vor den Konten einem Konto zu und legt die Konten dafür an:
@@ -214,17 +266,24 @@ async function init() {
   }
   for (const statement of SCHEMA) await pool.query(statement);
   // Buchungen ohne Konto zuordnen, danach ist das Konto Pflicht
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inTransaction(async (client) => {
     await assignLegacyAccounts(client);
     await client.query("ALTER TABLE transactions ALTER COLUMN account_id SET NOT NULL");
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw e;
-  } finally {
-    client.release();
+  });
+  // Gemerkte Zuordnungen nachziehen, z. B. wenn eine Buchung inzwischen als Umbuchung gilt; dann bisherige Ausgaben in
+  // der Auffangkategorie zuordnen, z. B. nach dem Einführen oder Erweitern der automatischen Zuordnung
+  const ruled = await inTransaction(async (client) => {
+    const result = await applyRules(client);
+    return { ...result, auto: await autoCategorize(client) };
+  });
+  const summary = (counts) => (counts.length ? ` (${counts.map((a) => `${a.name} ${a.count}`).join(", ")})` : "");
+  if (ruled.ids.length || ruled.reverted) {
+    console.log(
+      `Gemerkte Zuordnungen: ${ruled.ids.length} Buchungen zugeordnet${summary(ruled.counts)}, ${ruled.reverted} zurückgesetzt.`);
+  }
+  if (ruled.auto.length) {
+    const total = ruled.auto.reduce((sum, a) => sum + a.count, 0);
+    console.log(`Automatisch zugeordnet: ${total} Buchungen${summary(ruled.auto)}.`);
   }
 }
 
@@ -269,9 +328,9 @@ app.post("/api/transactions", async (req, res) => {
   if (!tx) return res.status(400).json({ error: "Ungültige Eingabe" });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO transactions (type, amount, category, date, note, account_id, transfer_override, rhythm)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [tx.type, tx.amount, tx.category, tx.date, tx.note, tx.account_id, tx.transfer_override ?? null,
+      `INSERT INTO transactions (type, amount, category, category_manual, date, note, account_id, transfer_override, rhythm)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [tx.type, tx.amount, tx.category, tx.category_manual, tx.date, tx.note, tx.account_id, tx.transfer_override ?? null,
         tx.rhythm ?? null]);
     const r = await pool.query(`${SELECT} WHERE t.id = $1`, [rows[0].id]);
     res.status(201).json(r.rows[0]);
@@ -483,10 +542,58 @@ app.delete("/api/categories/:id", async (req, res) => {
     if (!target || target.kind !== category.kind || target.id === id) {
       return res.status(400).json({ error: "Ungültige Zielkategorie" });
     }
-    await pool.query(
-      `WITH moved AS (UPDATE transactions t SET category = $2 WHERE t.category = $3 AND ${KIND} = $4)
-       DELETE FROM categories WHERE id = $1`,
-      [id, target.name, category.name, category.kind]);
+    await inTransaction(async (client) => {
+      // Gemerkte Zuordnungen ziehen mit ihren Buchungen um
+      await client.query("UPDATE rules SET category_id = $2 WHERE category_id = $1", [id, target.id]);
+      await client.query(
+        `WITH moved AS (UPDATE transactions t SET category = $2 WHERE t.category = $3 AND ${KIND} = $4)
+         DELETE FROM categories WHERE id = $1`,
+        [id, target.name, category.name, category.kind]);
+    });
+    res.status(204).end();
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Gemerkte Zuordnungen, nach Gegenpartei
+app.get("/api/rules", async (_req, res) => {
+  try {
+    res.json(await listRules(pool));
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Was eine gemerkte Zuordnung aus der Buchung transaction bewirken würde, wenn sie die Art kind hat
+app.get("/api/rules/preview", async (req, res) => {
+  const query = readPreviewQuery(req.query);
+  if (!query) return res.status(400).json({ error: "transaction=ID erforderlich, kind optional" });
+  try {
+    const preview = await previewRule(pool, query.transactionId, query.kind);
+    if (!preview) return res.status(404).json({ error: "Buchung nicht gefunden" });
+    res.json(preview);
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Merkt Kategorie und Rhythmus einer Buchung für alle Buchungen derselben Gegenpartei, auch für die bisherigen
+app.post("/api/rules", async (req, res) => {
+  const input = readRuleInput(req.body || {});
+  if (!input) return res.status(400).json({ error: "Ungültige Eingabe" });
+  try {
+    const result = await inTransaction((client) => rememberRule(client, input.transactionId, input.matchAmount));
+    if (result.error) return res.status(result.status).json({ error: result.error });
+    res.status(201).json(result);
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Löscht eine gemerkte Zuordnung; ihre Buchungen bekommen wieder, was sonst für sie gilt
+app.delete("/api/rules/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  try {
+    const found = await inTransaction(async (client) => {
+      if (!(await forgetRule(client, id))) return false;
+      await autoCategorize(client);
+      return true;
+    });
+    if (!found) return res.status(404).json({ error: "Gemerkte Zuordnung nicht gefunden" });
     res.status(204).end();
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });

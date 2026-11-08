@@ -57,6 +57,9 @@ export function useTitle(title: string) {
   }, [title]);
 }
 
+/** ?monat=alle zeigt auf der Seite „Buchungen“ alle Monate statt eines einzelnen */
+export const ALL_MONTHS = "alle";
+
 /** Monat aus ?monat=YYYY-MM, ohne Angabe der aktuelle. Wechseln ersetzt den Eintrag im Verlauf. */
 export function useMonthParam(): [string, (month: string) => void] {
   const { path, query } = useLocation();

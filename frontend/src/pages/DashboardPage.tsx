@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fetchDayBalances, fetchLatest, fetchMonthStats, fetchTransactions, updateTransaction } from "../api";
+import { fetchDayBalances, fetchLatest, fetchMonthStats, fetchTransactions, saveTransaction } from "../api";
 import AccountCard from "../components/AccountCard";
 import AccountDialog from "../components/AccountDialog";
 import CashflowChart from "../components/charts/CashflowChart";
@@ -244,9 +244,12 @@ export default function DashboardPage() {
           tx={editing}
           accounts={accounts}
           onCreateAccount={createAccount}
-          onSave={async (changes) => {
-            await updateTransaction(editing.id, changes);
-            refresh();
+          onSave={async (changes, remember) => {
+            try {
+              await saveTransaction(editing.id, changes, remember);
+            } finally {
+              refresh();
+            }
           }}
           onClose={() => setEditing(null)}
         />

@@ -1,14 +1,17 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api";
-import type { Account, NewAccount, NewTransaction, Transaction, TransactionChanges } from "../types";
+import type { Account, NewAccount, NewTransaction, RememberMode, Transaction, TransactionChanges } from "../types";
 import TransactionForm from "./TransactionForm";
 
 interface Props {
   tx: Transaction;
   accounts: Account[];
   onCreateAccount: (account: NewAccount) => Promise<Account>;
-  /** Speichert die geänderten Felder; wirft bei einem Fehler. */
-  onSave: (changes: TransactionChanges) => Promise<void>;
+  /**
+   * Speichert die geänderten Felder und merkt danach auf Wunsch die Zuordnung für die Gegenpartei (remember, sonst
+   * null); wirft bei einem Fehler.
+   */
+  onSave: (changes: TransactionChanges, remember: RememberMode | null) => Promise<void>;
   onClose: () => void;
 }
 
@@ -31,14 +34,14 @@ export default function EditTransactionDialog({ tx, accounts, onCreateAccount, o
 
   const close = () => ref.current?.close();
 
-  const handleSubmit = async (updated: NewTransaction) => {
+  const handleSubmit = async (updated: NewTransaction, remember: RememberMode | null) => {
     const changes = diff(tx, updated);
-    if (!Object.keys(changes).length) {
+    if (!Object.keys(changes).length && !remember) {
       close();
       return true;
     }
     try {
-      await onSave(changes);
+      await onSave(changes, remember);
       close();
       return true;
     } catch (e) {
@@ -82,6 +85,7 @@ export default function EditTransactionDialog({ tx, accounts, onCreateAccount, o
         accounts={accounts}
         onCreateAccount={onCreateAccount}
         lockBankData={imported}
+        remember={tx}
         submitLabel="Änderungen speichern"
         onSubmit={handleSubmit}
         onCancel={close}

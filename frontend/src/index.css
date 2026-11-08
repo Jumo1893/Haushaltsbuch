@@ -30,6 +30,7 @@ h1{font-size:1.4rem;font-weight:600;margin:0}
 .danger{color:var(--out)}
 .month{display:flex;align-items:center;gap:8px}
 .month span{min-width:140px;text-align:center;font-weight:500}
+.period{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 .icon{background:var(--surface);border:1px solid var(--line);border-radius:8px;width:36px;height:36px}
@@ -174,6 +175,8 @@ h3{font-size:.95rem;font-weight:600;margin:16px 0 4px}
 .rows small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted);vertical-align:1px}
 .count{color:var(--muted);font-size:.9rem;white-space:nowrap}
+.row-end{display:flex;justify-content:flex-end;align-items:center;gap:6px 12px}
+@media (max-width:520px){.row-end{flex-direction:column;align-items:flex-end}}
 .import-account{margin-top:16px}
 .imports li{display:block}
 .imports small{overflow-wrap:anywhere}
@@ -191,6 +194,7 @@ a.ghost{display:inline-block;text-decoration:none}
 form .actions{margin-top:6px}
 .welcome p{margin:0;color:var(--muted)}
 input:disabled,.seg label:has(input:disabled){opacity:.65;cursor:default}
+input[readonly]{background:none;color:var(--muted)}
 dialog.edit{width:min(560px,calc(100% - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}
 dialog.edit::backdrop{background:rgb(0 0 0/.45)}
 dialog.edit .hint{margin:0 0 12px}
@@ -210,6 +214,7 @@ dialog.edit .table-scroll{max-height:220px;padding-right:6px}
 .source div{margin-bottom:6px}
 .source dt{font-size:.8rem;color:var(--muted)}
 .source dd{margin:0;overflow-wrap:anywhere}
+.remember label,.rules li>div{overflow-wrap:anywhere}
 @media (max-width:600px){.top nav{order:3;width:100%}.top nav a{flex:1;padding:6px 4px;text-align:center}}
 @media (max-width:480px){.bar{grid-template-columns:90px 1fr auto}
 .selectable>li{grid-template-columns:auto minmax(0,1fr)}.selectable .del{grid-column:2;justify-self:end;margin-top:-8px}.selection>span{flex-basis:100%}.filters select{flex-grow:1}}

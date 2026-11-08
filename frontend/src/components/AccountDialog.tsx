@@ -7,18 +7,23 @@ import { ACCOUNT_KINDS, type Account, type AccountKind, type NewAccount } from "
 interface Props {
   /** Vorhandenes Konto zum Bearbeiten; ohne wird ein neues angelegt. */
   account?: Account;
+  /** Feste IBAN eines neuen Kontos, z. B. aus einer Importdatei; das Feld lässt sich dann nicht ändern. */
+  fixedIban?: string;
   /** Speichert das Konto; wirft bei einem Fehler. */
   onSave: (account: NewAccount) => Promise<void>;
   onClose: () => void;
 }
 
-export default function AccountDialog({ account, onSave, onClose }: Props) {
+export default function AccountDialog({ account, fixedIban, onSave, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   const [name, setName] = useState(account?.name ?? "");
   const [kind, setKind] = useState<AccountKind>(account?.kind ?? "giro");
   const [institution, setInstitution] = useState(account?.institution ?? "");
-  const [iban, setIban] = useState(account?.iban ? formatIban(account.iban) : "");
+  const [iban, setIban] = useState(() => {
+    const initial = fixedIban ?? account?.iban;
+    return initial ? formatIban(initial) : "";
+  });
   const [extraIbans, setExtraIbans] = useState(account?.extraIbans.map(formatIban).join(", ") ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -108,12 +113,15 @@ export default function AccountDialog({ account, onSave, onClose }: Props) {
             autoComplete="off"
             spellCheck={false}
             placeholder="optional"
+            readOnly={fixedIban !== undefined}
             value={iban}
             onChange={(e) => setIban(e.target.value)}
           />
           <small className="hint">
-            Umsätze mit dieser IBAN ordnet der CSV-Import automatisch diesem Konto zu. Überweisungen anderer eigener
-            Konten an diese IBAN gelten als Umbuchung.
+            {fixedIban !== undefined
+              ? "Stammt aus der Importdatei. Umsätze mit dieser IBAN gehen in dieses Konto, auch bei künftigen Importen. "
+              : "Umsätze mit dieser IBAN ordnet der CSV-Import automatisch diesem Konto zu. "}
+            Überweisungen anderer eigener Konten an diese IBAN gelten als Umbuchung.
           </small>
         </div>
         <div className="full">

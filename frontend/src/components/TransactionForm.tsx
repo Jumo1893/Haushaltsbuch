@@ -7,12 +7,15 @@ import {
   type Account,
   type NewAccount,
   type NewTransaction,
+  type RememberMode,
   type Rhythm,
+  type Transaction,
   type TxKind,
   type TxType,
 } from "../types";
 import AccountSelect from "./AccountSelect";
 import CategorySelect from "./CategorySelect";
+import RememberField, { canRemember, defaultChoice, useRulePreview, type RememberChoice } from "./RememberField";
 import Segmented from "./Segmented";
 
 const KINDS: [TxKind, string][] = [
@@ -36,9 +39,14 @@ interface Props {
   onCreateAccount: (account: NewAccount) => Promise<Account>;
   /** Richtung, Betrag, Datum und Konto sperren, z. B. bei importierten Buchungen. */
   lockBankData?: boolean;
+  /** Buchung, deren Zuordnung sich für alle Buchungen derselben Gegenpartei merken lässt; ohne Gegenpartei nicht */
+  remember?: Transaction;
   submitLabel?: string;
-  /** Liefert true, wenn gespeichert wurde – bei einer neuen Buchung wird das Formular dann geleert. */
-  onSubmit: (tx: NewTransaction) => Promise<boolean>;
+  /**
+   * Liefert true, wenn gespeichert wurde – bei einer neuen Buchung wird das Formular dann geleert. remember: ob und wie
+   * die Zuordnung für die Gegenpartei gemerkt werden soll, sonst null.
+   */
+  onSubmit: (tx: NewTransaction, remember: RememberMode | null) => Promise<boolean>;
   onCancel?: () => void;
 }
 
@@ -48,6 +56,7 @@ export default function TransactionForm({
   accounts,
   onCreateAccount,
   lockBankData = false,
+  remember,
   submitLabel = "Buchung speichern",
   onSubmit,
   onCancel,
@@ -62,6 +71,8 @@ export default function TransactionForm({
   const [note, setNote] = useState(initial?.note ?? "");
   const [rhythm, setRhythm] = useState<Rhythm | null>(initial?.rhythm ?? null);
   const [accountId, setAccountId] = useState(initial?.accountId ?? defaultAccountId);
+  // Merken für die Gegenpartei; null: nicht angefasst, dann gilt die Vorauswahl
+  const [rememberChoice, setRememberChoice] = useState<RememberChoice | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
 
   // Ohne Auswahl gilt das erste Konto, sobald die Konten geladen sind
@@ -71,6 +82,11 @@ export default function TransactionForm({
 
   // Ohne Auswahl gilt die erste Kategorie der Art, sobald die Kategorien geladen sind
   const category = categoryName ?? categoryNames[kind][0] ?? "";
+
+  const preview = useRulePreview(remember, kind);
+  const rememberValue = canRemember(remember)
+    ? (rememberChoice ?? defaultChoice(remember, category, rhythm, preview))
+    : "";
 
   const changeKind = (k: TxKind) => {
     setTransfer(k === "transfer");
@@ -82,16 +98,19 @@ export default function TransactionForm({
     e.preventDefault();
     const amt = parseFloat(amount);
     if (!(amt > 0) || account === null || !category) return;
-    const ok = await onSubmit({
-      type,
-      transfer,
-      amount: amt,
-      category,
-      date,
-      note: note.trim(),
-      accountId: account,
-      rhythm,
-    });
+    const ok = await onSubmit(
+      {
+        type,
+        transfer,
+        amount: amt,
+        category,
+        date,
+        note: note.trim(),
+        accountId: account,
+        rhythm,
+      },
+      rememberValue || null,
+    );
     if (ok && !initial) {
       setAmount("");
       setNote("");
@@ -178,8 +197,19 @@ export default function TransactionForm({
             </option>
           ))}
         </select>
-        {rhythm && <small className="hint">Nur eine Angabe, künftige Buchungen entstehen dadurch nicht.</small>}
+        {rhythm && <small className="hint">Nur eine Angabe: Die App legt dadurch keine Buchungen an.</small>}
       </div>
+      {canRemember(remember) && (
+        <RememberField
+          id={`${id}-remember`}
+          tx={remember}
+          preview={preview}
+          category={category}
+          rhythm={rhythm}
+          value={rememberValue}
+          onChange={setRememberChoice}
+        />
+      )}
       <div className="full">
         <label htmlFor={`${id}-note`}>Notiz</label>
         <input id={`${id}-note`} type="text" maxLength={60} value={note} onChange={(e) => setNote(e.target.value)} />

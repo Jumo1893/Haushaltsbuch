@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, fetchImportOptions, previewImport, runImport } from "../api";
 import { megabytes, movements } from "../format";
 import { Link } from "../router";
-import type { Account, ImportOptions, ImportPreview as Preview, ImportResult, NewAccount, ProfileMismatch } from "../types";
+import type {
+  Account,
+  ImportAccount,
+  ImportOptions,
+  ImportPreview as Preview,
+  ImportResult,
+  NewAccount,
+  ProfileMismatch,
+} from "../types";
 import ImportPreview, { Stat } from "./ImportPreview";
 
 type Step =
@@ -31,6 +39,15 @@ interface Props {
 
 /** z. B. „1 Umsatz“, „5 Umsätze“ */
 const bookings = (n: number) => `${n} ${n === 1 ? "Umsatz" : "Umsätze"}`;
+
+/** Wo die importierten Umsätze stehen: automatisch zugeordnet je Kategorie, die übrigen in der Auffangkategorie */
+function categoryHint({ imported, category, autoCategorized }: ImportResult) {
+  const assigned = autoCategorized.reduce((sum, c) => sum + c.count, 0);
+  if (!assigned) return `Die Umsätze stehen in der Kategorie „${category}“ im Monat ihres Buchungstags.`;
+  const list = autoCategorized.map((c) => `${c.count} zu „${c.name}“`).join(", ");
+  const rest = assigned < imported ? ` Die übrigen stehen in „${category}“.` : "";
+  return `Die Umsätze stehen im Monat ihres Buchungstags. Automatisch zugeordnet: ${list}.${rest}`;
+}
 
 export default function CsvImport({ accounts, defaultAccountId = null, onCreateAccount, onImported }: Props) {
   const [options, setOptions] = useState<ImportOptions>({ maxFileBytes: 0, profiles: [] });
@@ -130,6 +147,17 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
     }
   };
 
+  /** Legt ein Konto an. Hat es eine eigene IBAN der Datei, zeigt die Vorschau deren Datensätze nun in diesem Konto. */
+  const createAccount = async (account: NewAccount) => {
+    const created = await onCreateAccount(account);
+    const assign = (a: ImportAccount): ImportAccount =>
+      a.iban !== null && a.iban === created.iban ? { ...a, accountId: created.id, accountName: created.name } : a;
+    setStep((s) =>
+      s.kind === "preview" ? { kind: "preview", preview: { ...s.preview, accounts: s.preview.accounts.map(assign) } } : s,
+    );
+    return created;
+  };
+
   const handleDrop = (e: DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     setDragging(false);
@@ -170,9 +198,7 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
             )}
           </ul>
         )}
-        {result.imported > 0 && (
-          <p className="hint">Die Umsätze stehen in der Kategorie „{result.category}“ im Monat ihres Buchungstags.</p>
-        )}
+        {result.imported > 0 && <p className="hint">{categoryHint(result)}</p>}
         {result.accounts.some((a) => a.created) && (
           <p className="hint">
             Auf der Seite eines neuen Kontos lassen sich Name und Art ändern und der Kontostand mit der Bank abgleichen.
@@ -250,7 +276,7 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
           accounts={accounts}
           accountId={accountId}
           onAccountChange={setAccountId}
-          onCreateAccount={onCreateAccount}
+          onCreateAccount={createAccount}
           includeDuplicates={includeDuplicates}
           onIncludeDuplicates={setIncludeDuplicates}
           importing={step.kind === "importing"}
