@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { dateFormat, eur, formatIban, movements, parseDate } from "../format";
+import { bookings, dateFormat, eur, formatIban, movements, parseDate } from "../format";
 import type { Account, ImportAccount, ImportPreview as Preview, ImportRow, NewAccount } from "../types";
 import AccountDialog from "./AccountDialog";
 import AccountSelect from "./AccountSelect";
@@ -134,7 +134,7 @@ export default function ImportPreview({
   onCancel,
 }: Props) {
   const selectId = useId();
-  const { counts, sample, duplicates, errors, skipped, depot } = preview;
+  const { counts, sample, duplicates, errors, skipped, depot, links } = preview;
   const toImport = counts.new + (includeDuplicates ? counts.duplicate : 0);
   const depotRows = depot.new + depot.duplicate;
   const depotToImport = depot.new + (includeDuplicates ? depot.duplicate : 0);
@@ -195,6 +195,27 @@ export default function ImportPreview({
       )}
 
       {depotRows > 0 && <DepotRow preview={preview} accounts={accounts} accountId={accountId} />}
+
+      {links.length > 0 && (
+        <>
+          <h3>Gegenbuchungen</h3>
+          <ul className="rows">
+            {links.map((l) => (
+              <li key={l.id}>
+                <div>
+                  {l.name}
+                  <small>passende Buchungen, werden verbunden</small>
+                </div>
+                <span className="count">{bookings(l.count)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="hint">
+            Geld zwischen PayPal und eigenen Konten: Jede dieser Bewegungen wird mit der passenden Buchung im anderen
+            Konto verbunden, beide gelten als Umbuchung. Als Ausgabe zählt nur die Zahlung bei PayPal.
+          </p>
+        </>
+      )}
 
       {sample.length > 0 ? (
         <>

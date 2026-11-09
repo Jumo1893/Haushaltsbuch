@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api";
+import { dateFormat, eur, parseDate } from "../format";
 import type { Account, NewAccount, NewTransaction, RememberMode, Transaction, TransactionChanges } from "../types";
 import TransactionForm from "./TransactionForm";
 
@@ -26,6 +27,8 @@ export default function EditTransactionDialog({ tx, accounts, onCreateAccount, o
   const titleId = useId();
   const [error, setError] = useState("");
   const imported = tx.importId !== null;
+  const { linked } = tx;
+  const linkedAccount = linked && (accounts.find((a) => a.id === linked.accountId)?.name ?? "anderes Konto");
 
   useEffect(() => {
     const dialog = ref.current;
@@ -68,10 +71,27 @@ export default function EditTransactionDialog({ tx, accounts, onCreateAccount, o
                 <dd>{tx.purpose}</dd>
               </div>
             )}
+            {linked && (
+              <div>
+                <dt>Gegenbuchung</dt>
+                <dd>
+                  {linkedAccount} · {dateFormat.format(parseDate(linked.date))} · {linked.type === "in" ? "+" : "−"}
+                  {eur.format(linked.amount)}
+                  {(linked.counterparty || linked.purpose) && ` · ${linked.counterparty || linked.purpose}`}
+                </dd>
+              </div>
+            )}
           </dl>
           <p className="hint">
             Aus einem CSV-Import: Richtung, Betrag, Datum und Konto stehen durch den Import fest. Ob es eine Umbuchung
             ist, lässt sich ändern.
+            {linked && (
+              <>
+                {" "}
+                Sie ist mit der Gegenbuchung in „{linkedAccount}“ verbunden, beide gelten als Umbuchung. Wird sie zur{" "}
+                {tx.type === "in" ? "Einnahme" : "Ausgabe"}, löst sich die Verbindung.
+              </>
+            )}
           </p>
         </>
       )}

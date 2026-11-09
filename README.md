@@ -36,6 +36,8 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
 - Ausgaben nach Kategorie als Balkendiagramm
 - Kontoumsätze aus CSV-Dateien der Bank importieren, mit Vorschau, Duplikaterkennung und Liste der bisherigen Importe
   (siehe „CSV-Import“)
+- PayPal-Umsätze aus dem Aktivitätenbericht importieren: Zahlungen stehen mit dem Händler da, und was PayPal vom
+  Bankkonto holt, wird mit der Lastschrift dort verbunden und zählt nicht doppelt (siehe „PayPal“)
 - Helles und dunkles Design (folgt der Systemeinstellung), für Mobilgeräte geeignet
 
 Kategorien gibt es je Art. Zu Beginn sind das die folgenden, unter „Kategorien“ lassen sie sich anlegen, umbenennen und
@@ -254,6 +256,9 @@ Die App erkennt Umbuchungen automatisch und wählt die Art dann vor. Als Umbuchu
 - ohne IBAN im Export, deren Buchungsart bei Trade Republic für Geld von oder zum Depot steht (`BUY`, `SELL`,
   `PRIVATE_MARKET_BUY`, `IPO_SUBSCRIPTION`, `REDEMPTION`, `EARLY_REDEMPTION`, siehe „Depot“). Gebühren und Steuern dieser
   Buchungen stecken im Betrag der Umbuchung, sie stehen im Depot.
+- deren Art bei PayPal für Geld vom oder zum Bankkonto steht, z. B. `Bankgutschrift auf PayPal-Konto` (siehe „PayPal“).
+- die mit einer Gegenbuchung in einem anderen Konto verbunden ist, z. B. die Lastschrift von PayPal im Girokonto mit der
+  Bankgutschrift bei PayPal (siehe „PayPal“). In den Listen steht dann neben „Umbuchung“ das andere Konto.
 
 Liegt die Erkennung daneben oder gibt es keine IBAN, z. B. bei Bargeld vom Automaten, lässt sich die Art beim Bearbeiten
 ändern, auch bei importierten Buchungen. Diese Wahl gilt dann dauerhaft, unabhängig von der Erkennung.
@@ -354,6 +359,59 @@ steht zu Beginn auf aus und gilt je Depot; wer ihn nach 22:30 Uhr einschaltet, w
 **Löschen:** „Depot löschen“ entfernt das Depot mit seinen Bewegungen, die Buchungen im Geldkonto bleiben. Ein neuer Import
 stellt es wieder her.
 
+## PayPal
+PayPal ist ein eigenes Konto mit dem PayPal-Guthaben als Kontostand. Reicht das Guthaben für eine Zahlung nicht, holt
+PayPal den Rest per Lastschrift vom Bankkonto. Im Export von PayPal steht dafür eine Bankgutschrift, im Bankkonto die
+Lastschrift. Die App verbindet beide als Umbuchung, als Ausgabe zählt nur die Zahlung bei PayPal, und zwar mit dem
+Händler als Gegenpartei statt „PayPal Europe“. So lassen sich auch Abos über PayPal nach Händler zuordnen und merken.
+
+**Einrichten:** Bei PayPal unter „Aktivitäten“ den Aktivitätenbericht mit allen Transaktionen als CSV herunterladen und
+mit dem Profil „PayPal“ importieren. In der Vorschau das Konto wählen bzw. über „Neues Konto anlegen …“ anlegen, z. B.
+„PayPal“ mit der Art „Sonstiges“. Mehrere Dateien, z. B. eine je Jahr, lassen sich nacheinander importieren,
+Überschneidungen erkennt der Import als Duplikate. Die Reihenfolge der Importe von PayPal und Bankkonto ist egal.
+
+**Was wohin gehört:** Die Spalte `Auswirkung auf Guthaben` entscheidet, ob eine Zeile zählt, nicht der Status. PayPal
+lässt Bankgutschriften dauerhaft auf „Ausstehend“.
+
+| Zeile im Export (`Typ`) | In der App |
+|-------------------------|------------|
+| Zahlungen, z. B. `Zahlung im Einzugsverfahren mit Zahlungsrechnung`, `PayPal Express-Zahlung`, `Handyzahlung`, `Abonnementzahlung`, `Rückzahlung` | Ausgabe (`Soll`) oder Einnahme (`Haben`), Gegenpartei ist `Name` |
+| `Bankgutschrift auf PayPal-Konto`, `Überweisung als Zahlungsquelle`, `Allgemeine Gutschrift auf Kreditkarte`, `Zahlung per PayPal-Käuferkredit` | Umbuchung zu PayPal, verbunden mit der Lastschrift im anderen Konto |
+| `Von Nutzer eingeleitete Abbuchung`, `Allgemeine Abbuchung` | Umbuchung zum Bankkonto, verbunden mit der Gutschrift dort |
+| `Rückbuchung von ACH-Gutschrift`, `Rückbuchung von ACH-Abbuchung` | Umbuchung: Die Bank hat eine Lastschrift zurückgegeben bzw. eine Auszahlung kam nicht an |
+| `Allgemeine Währungsumrechnung` in Euro | Ausgabe oder Einnahme mit dem Betrag in Euro |
+| Zeilen in anderer Währung als Euro | nicht übernommen, in Euro zählt die Währungsumrechnung |
+| `Einbehaltung für offene Autorisierung`, `Rückbuchung allgemeiner Einbehaltung` | nicht übernommen: PayPal hält Geld bis zur Zahlung zurück, beide heben sich auf |
+| `Auswirkung auf Guthaben` = `Memo`, z. B. `Allgemeine Autorisierung` | nicht übernommen, ändert das Guthaben nicht |
+
+Bankgutschriften, Währungsumrechnungen und andere Zeilen ohne `Name` bekommen die Gegenpartei der Zeile, auf die
+`Zugehöriger Transaktionscode` verweist, also den Händler der Zahlung. Verwendungszweck ist `Artikelbezeichnung`, sonst
+`Betreff`, `Hinweis` (z. B. bei Handyzahlungen) oder der Typ. Gebühren sind im Betrag enthalten (`Netto`). Bei einer
+Auszahlung mit Gebühr ist die Umbuchung bei PayPal deshalb um die Gebühr größer als die Gutschrift im Bankkonto,
+verbunden werden die beiden trotzdem.
+
+**Verbinden mit dem Bankkonto:** Zu jeder Umbuchung bei PayPal sucht die App die Buchung im anderen Konto und verbindet
+beide (Spalte `linked_id`), z. B. die Bankgutschrift mit der Lastschrift im Girokonto oder die Auszahlung mit der
+Gutschrift. Bis dahin ist die Lastschrift im Girokonto eine Ausgabe, danach eine Umbuchung. Eine automatisch vergebene
+Kategorie geht dabei zurück nach „Sonstiges“, eine von Hand gewählte bleibt.
+- **Passend** ist eine Buchung eines anderen Kontos von oder an PayPal (Gegenpartei mit „PayPal“ oder die Gläubiger-ID
+  `LU96ZZZ0000000000000000058` von PayPal Europe, keine Wertpapiere) mit demselben Betrag in Gegenrichtung, bei PayPal
+  ohne Gebühr. Sie liegt höchstens 3 Tage vor und 7 Tage nach der Buchung bei PayPal, die Bank bucht meist 1 bis 4 Tage
+  später. Beim Käuferkredit kommt die Rückzahlung bis zu 45 Tage später.
+- **Mehrere passende:** Zuerst zählt, ob der Händler im Verwendungszweck der Lastschrift steht („Ihr Einkauf bei …“),
+  dann, ob die Bank nicht vor PayPal bucht, dann der kleinste Abstand. Jede Buchung hat höchstens eine Gegenbuchung.
+- **Wann:** nach jedem Import, gleich für welches Konto, und bei jedem Start des Backends. Bestehende Verbindungen bleiben.
+- **Ohne Gegenbuchung** bleibt eine Lastschrift im Girokonto eine Ausgabe, z. B. aus einer Zeit, für die kein Export von
+  PayPal importiert ist. Eine Bankgutschrift bei PayPal bleibt eine Umbuchung, auch wenn das Girokonto fehlt.
+- **Anzeige:** In den Listen steht „Umbuchung ↔ Konto“, beim Bearbeiten die Gegenbuchung mit Konto, Tag, Betrag und
+  Gegenpartei. Vorschau und Zusammenfassung des Imports nennen, wie viele Buchungen je Konto verbunden werden.
+- **Lösen:** Wer eine verbundene Buchung von Hand zur Ausgabe oder Einnahme macht, auch über „Bearbeiten“ für mehrere,
+  löst die Verbindung. Die andere Buchung gilt dann wieder, was sonst für sie gilt, die geänderte wird nicht neu
+  verbunden. Wird eine Buchung gelöscht, verliert die andere ihre Gegenbuchung.
+
+**Kontostand:** Beginnt der erste importierte Export nicht bei einem Guthaben von 0,00 €, den Kontostand mit der Spalte
+`Guthaben` abgleichen (siehe „Kontostand abgleichen“).
+
 ## CSV-Import
 Auf der Seite „Import“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen. Kommt man über „Umsätze importieren“
 von der Seite eines Kontos, ist dieses Konto für Umsätze ohne eigene IBAN schon gewählt.
@@ -362,10 +420,11 @@ von der Seite eines Kontos, ist dieses Konto für Umsätze ohne eigene IBAN scho
 2. CSV-Datei auswählen oder in das Feld ziehen (höchstens 5 MB und 10.000 Datensätze).
 3. Die Vorschau zeigt, wie viele Datensätze neu sind, welche schon importiert wurden und welche Zeilen
    fehlerhaft sind (mit Zeilennummer und Grund), dazu die ersten Datensätze und die Konten, in die sie gehen.
-   Enthält die Datei keine IBAN des eigenen Kontos, wird hier das Konto gewählt.
-4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung mit Links zu den Konten und den
-   automatisch oder über gemerkte Zuordnungen zugeordneten Umsätzen je Kategorie, und der Import steht unter
-   „Bisherige Importe“.
+   Enthält die Datei keine IBAN des eigenen Kontos, wird hier das Konto gewählt. Unter „Gegenbuchungen“ steht, mit
+   wie vielen Buchungen anderer Konten der Import Umsätze verbindet (siehe „PayPal“).
+4. Import bestätigen oder abbrechen. Nach dem Import erscheint eine Zusammenfassung mit Links zu den Konten, den
+   automatisch oder über gemerkte Zuordnungen zugeordneten Umsätzen je Kategorie und den verbundenen Gegenbuchungen, und
+   der Import steht unter „Bisherige Importe“.
 
 Regeln:
 - **Buchungen:** Jeder gültige Datensatz wird eine Buchung, mit negativem Betrag als Ausgabe, mit positivem als
@@ -388,7 +447,8 @@ Regeln:
 - **Duplikate:** Ein Umsatz gilt als bereits importiert, wenn eigenes Konto, Buchungstag, Betrag, Gegenpartei
   (Name und IBAN) und Verwendungszweck mit einem früher importierten Umsatz übereinstimmen (Groß-/Kleinschreibung
   und Leerzeichen zählen nicht). Liefert das Format eine eindeutige Transaktions-ID (Trade Republic), zählt
-  stattdessen nur sie. Duplikate werden standardmäßig übersprungen, lassen sich in der Vorschau aber trotzdem
+  stattdessen nur sie, bei PayPal zusammen mit dem Typ, denn dort teilen sich manche Zeilen einen Transaktionscode
+  (z. B. eine Auszahlung und ihre Rückbuchung). Duplikate werden standardmäßig übersprungen, lassen sich in der Vorschau aber trotzdem
   importieren. Stehen gleiche Umsätze mehrfach in einer Datei (z. B. zwei gleiche Einkäufe am selben Tag), gelten
   nur so viele als Duplikat, wie schon gespeichert sind. Von Hand erfasste Buchungen werden nicht verglichen.
 - **Vorgemerkte Umsätze** (noch nicht gebucht) lässt das Profil CSV-CAMT V8 aus. Sie kommen mit einem späteren
@@ -464,6 +524,7 @@ Regeln:
 | CSV-CAMT V8 | `csv-camt-v8.json` | Export „CSV-CAMT V8“, z. B. aus dem Online-Banking der Sparkassen. Trennzeichen `;`, Datum `TT.MM.JJ` oder `TT.MM.JJJJ`, Dezimalkomma, Kodierung UTF-8 oder Windows-1252. Konto über die IBAN in `Auftragskonto` |
 | Trade Republic | `trade-republic.json` | Transaktionsexport aus der Trade-Republic-App (Spalten `datetime`, `date`, `account_type`, … `mcc_code`). Trennzeichen `,`, Datum `JJJJ-MM-TT`, Dezimalpunkt, UTF-8. Übernimmt alle Geldbewegungen: Kartenzahlungen, Überweisungen, Zinsen, Ausschüttungen, Steuern sowie Käufe und Verkäufe (inklusive Sparpläne). Betrag = `amount` + `fee` + `tax`, Duplikate über `transaction_id`. Zeilen mit Wertpapier gehen zusätzlich ins Depot. Enthält keine eigene IBAN, das Konto wird in der Vorschau gewählt |
 | Trade Republic (nur Depot) | `trade-republic-depot.json` | Übernimmt nur die Zeilen mit Wertpapier ins Depot, keine Buchungen. Für gekürzte Exporte, in denen `transaction_id` und die Spalten der Gegenpartei fehlen, z. B. nach einem Umweg über Excel; das Datum darf dann auch `M/D/JJJJ` sein. Ohne Transaktions-ID ließen sich Geldbewegungen nicht sicher mit vorhandenen Buchungen abgleichen, deshalb lehnt das Profil „Trade Republic“ solche Dateien ab |
+| PayPal | `paypal.json` | Aktivitätenbericht von PayPal (Spalten `Datum`, `Uhrzeit`, `Zeitzone`, `Name`, `Typ`, … `Auswirkung auf Guthaben`). Trennzeichen `,`, Datum `TT.MM.JJJJ`, Dezimalkomma, UTF-8 mit BOM. Betrag = `Brutto` + `Gebühr`, Duplikate über `Transaktionscode` und `Typ`. Lässt Zeilen ohne Auswirkung auf das Guthaben, Einbehaltungen und Fremdwährung aus. Enthält keine eigene IBAN, das Konto wird in der Vorschau gewählt (siehe „PayPal“) |
 
 Beispieldateien mit erfundenen Daten (inklusive fehlerhafter Zeilen) liegen unter `backend/test/fixtures/`.
 Sie sind für Tests gedacht: Importiert landen ihre Umsätze wie echte Buchungen in der Datenbank.
@@ -485,7 +546,8 @@ im Log (`podman compose logs backend`) nennt den Grund. Vorlage: `csv-camt-v8.js
 | `decimalSeparator`   | ja      | `,` oder `.` |
 | `thousandsSeparator` | nein    | `.`, `,`, `'`, Leerzeichen oder leer (Standard: keins) |
 | `columns`            | ja      | Zuordnung Feld der App → Spaltenname in der Datei, siehe unten. Statt eines Namens geht auch eine Liste, dann gilt die erste nicht leere Spalte (z. B. `["counterparty_name", "name"]`) |
-| `skipRows`           | nein    | Zeilen, die ausgelassen werden: `{ "column": "...", "equals": "...", "reason": "..." }` |
+| `skipRows`           | nein    | Zeilen, die ausgelassen werden: `{ "column": "...", "equals": "...", "reason": "..." }`. Statt `equals` geht `notEquals`: Die Zeile fällt weg, wenn die Zelle einen anderen Wert hat, leere Zellen bleiben (z. B. `{ "column": "Währung", "notEquals": "EUR", … }`) |
+| `transactionKey`     | nein    | Felder, an denen ein Umsatz mit Transaktions-ID wiedererkannt wird (Standard `["transactionId"]`). Steht dieselbe ID für mehrere Zeilen, kommen weitere Textfelder dazu, bei PayPal `["transactionId", "bookingText"]` |
 | `depot`              | nein    | `true`: Zeilen mit Wertpapier werden zusätzlich Bewegungen im Depot (siehe „Depot“). Braucht die Felder `bookingText`, `section`, `isin`, `assetName`, `assetClass`, `shares` und `price` |
 | `bookings`           | nein    | `false`: keine Buchungen anlegen, nur Bewegungen im Depot (braucht `depot`) |
 
@@ -499,7 +561,8 @@ Felder für `columns` (Pflicht sind `date` und `amount`):
 | `currency` | Währung, nur EUR wird übernommen (leer gilt als EUR) | – |
 | `counterparty` | Name der Gegenpartei | `counterparty` |
 | `purpose` | Verwendungszweck | `purpose` |
-| `transactionId` | eindeutige ID der Bank, ersetzt bei der Duplikaterkennung alle anderen Merkmale | `details` |
+| `transactionId` | eindeutige ID der Bank, ersetzt bei der Duplikaterkennung alle anderen Merkmale (siehe `transactionKey`) | `details` |
+| `referenceId` | Transaktions-ID der Zeile, zu der diese gehört, z. B. die Zahlung zu einer Bankgutschrift bei PayPal. Ist die Gegenpartei leer, gilt die der Zeile mit dieser ID, auch wenn diese ausgelassen wird | `details` |
 | `account` | eigenes Konto (IBAN), ordnet den Umsatz dem Konto mit dieser IBAN zu | `account_id`, `details` |
 | `valueDate` | Valutadatum | `details` |
 | `bookingText` | Buchungstext oder Art der Buchung, z. B. LASTSCHRIFT oder BUY | `details` |
@@ -543,7 +606,8 @@ Namen `backend` regelmäßig neu auf und findet den neuen Container auch mit neu
 ## Tests
 Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien und Konten (inklusive IBAN-Prüfziffer und Kontostand laut
 Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
-Duplikaterkennung, Zuordnung zu Konten), die automatischen Kategorien (Händlerarten, Supermärkte, von Hand gewählte
+Duplikaterkennung, Zuordnung zu Konten), den PayPal-Export (Auslassen, Händler aus der zugehörigen Zeile) und das Verbinden mit
+Gegenbuchungen, die automatischen Kategorien (Händlerarten, Supermärkte, von Hand gewählte
 Kategorien), die gemerkten Zuordnungen (Merken, Löschen, Vorschau) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
 laufen mit dem Test-Runner von Node.js 20+ und brauchen weder Datenbank noch Netz; die Antworten von Lang & Schwarz und
 Kraken sind nachgestellt:
@@ -567,6 +631,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── depot.js              Depot: Wertpapierbewegungen, Bestände, Einstand, Gewinne, Depotwert im Zeitverlauf
 │   ├── quotes.js             Aktuelle Kurse von Lang & Schwarz und Kraken abrufen und speichern
 │   ├── schedule.js           Täglicher Kursabruf: Termine, Nachholen, Wiederholen
+│   ├── paypal.js             PayPal: Geld von und zu eigenen Konten mit der Gegenbuchung verbinden
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -633,6 +698,7 @@ in der `.env` einen anderen Port setzen, z. B. `DB_PORT=5433`.
 | `transfer_override` | `BOOLEAN` | Umbuchung von Hand festgelegt (ja oder nein), leer: automatisch erkennen (siehe „Umbuchungen“) |
 | `rhythm`     | `TEXT`          | `monthly`, `quarterly`, `semiannual` oder `yearly`, leer: einmalig (siehe „Rhythmus“) |
 | `rule_id`    | `INTEGER`       | Verweis auf `rules.id`: gemerkte Zuordnung, der die Buchung folgt, leer: keine (siehe „Gemerkte Zuordnungen“) |
+| `linked_id`  | `INTEGER`       | Verweis auf `transactions.id`: Gegenbuchung in einem anderen Konto, die ebenso hierher zeigt; beide gelten als Umbuchung (siehe „PayPal“). Leer: keine |
 
 ### Tabelle `accounts`
 Ein Eintrag je Konto.
@@ -799,12 +865,15 @@ Buchung eine Umbuchung ist; ohne Angabe wird das automatisch erkannt. Ebenfalls 
 Bei ungültigen Eingaben antwortet das Backend mit `400` und `{ "error": "..." }`, auch wenn es das Konto nicht gibt.
 Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Erfassung von Hand leer bzw. `null`),
 `transfer`: `true` bei einer Umbuchung zwischen eigenen Konten, von Hand festgelegt oder erkannt (siehe
-„Umbuchungen“), und `ruleId`: die gemerkte Zuordnung, der die Buchung folgt, sonst `null`.
+„Umbuchungen“), `ruleId`: die gemerkte Zuordnung, der die Buchung folgt, sonst `null`, und `linked`: die Gegenbuchung
+in einem anderen Konto (siehe „PayPal“), sonst `null`, z. B. `{ "id": 812, "accountId": 1, "type": "out",
+"amount": 24.99, "date": "2026-05-05", "counterparty": "PayPal Europe S.a.r.l. et Cie S.C.A", "purpose": "…" }`.
 
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
 `{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category`, `note`,
 `rhythm` und `transfer` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`. Wer `category`
-oder `rhythm` angibt, löst die Buchung von ihrer gemerkten Zuordnung, das gilt auch für `PATCH /api/transactions`.
+oder `rhythm` angibt, löst die Buchung von ihrer gemerkten Zuordnung, wer `"transfer": false` angibt, von ihrer
+Gegenbuchung. Das gilt auch für `PATCH /api/transactions`.
 
 Body für `PATCH /api/transactions`: die IDs und die Änderung, z. B.
 `{ "ids": [12, 57, 103], "changes": { "category": "Lebensmittel", "note": "Einkauf beim Supermarkt" } }`. In `changes`
@@ -883,6 +952,9 @@ sie braucht der Import `account`. Die Zusammenfassung des Imports nennt unter `a
 der importierten Umsätze und ob sie neu angelegt wurden. Unter `autoCategorized` stehen die automatisch oder über
 gemerkte Zuordnungen zugeordneten Umsätze je Kategorie, die meisten zuerst, z. B. `[{ "name": "Lebensmittel", "count": 12 }]`; die übrigen stehen in
 der Kategorie `category`.
+
+Gegenbuchungen (siehe „PayPal“) nennt die Vorschau unter `links` und die Zusammenfassung unter `linked`, je Konto der
+anderen Seite die Zahl der Paare, z. B. `[{ "id": 1, "name": "Girokonto", "count": 50 }]`, ohne Paare `[]`.
 
 Die Wertpapierbewegungen stehen in der Vorschau unter `depot`, z. B. `{ "new": 120, "duplicate": 0, "positions": 12 }`, und
 Zeilen, die nur ins Depot gehen, in `counts.depot`. Enthält die Datei neue Bewegungen, braucht der Import `account`: das

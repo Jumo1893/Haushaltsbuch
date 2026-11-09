@@ -49,6 +49,13 @@ function categoryHint({ imported, category, autoCategorized }: ImportResult) {
   return `Die Umsätze stehen im Monat ihres Buchungstags. Automatisch zugeordnet: ${list}.${rest}`;
 }
 
+/** Welche Umsätze mit Gegenbuchungen in anderen Konten verbunden wurden, z. B. Bankgutschriften bei PayPal */
+function linkedHint(linked: ImportResult["linked"]) {
+  const total = linked.reduce((sum, l) => sum + l.count, 0);
+  const list = linked.map((l) => `${l.count} in „${l.name}“`).join(", ");
+  return `${bookings(total)} mit ihrer Gegenbuchung verbunden (${list}). Beide Seiten gelten als Umbuchung.`;
+}
+
 export default function CsvImport({ accounts, defaultAccountId = null, onCreateAccount, onImported }: Props) {
   const [options, setOptions] = useState<ImportOptions>({ maxFileBytes: 0, profiles: [] });
   const [profileId, setProfileId] = useState("");
@@ -199,6 +206,7 @@ export default function CsvImport({ accounts, defaultAccountId = null, onCreateA
           </ul>
         )}
         {result.imported > 0 && <p className="hint">{categoryHint(result)}</p>}
+        {result.linked.length > 0 && <p className="hint">{linkedHint(result.linked)}</p>}
         {result.accounts.some((a) => a.created) && (
           <p className="hint">
             Auf der Seite eines neuen Kontos lassen sich Name und Art ändern und der Kontostand mit der Bank abgleichen.

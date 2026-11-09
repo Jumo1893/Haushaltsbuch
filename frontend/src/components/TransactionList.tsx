@@ -34,6 +34,8 @@ export default function TransactionList({
 
   // Das Konto nur nennen, wenn es mehrere gibt
   const accountNames = new Map(showAccount && accounts.length > 1 ? accounts.map((a) => [a.id, a.name]) : []);
+  // Das Konto einer Gegenbuchung immer, es sagt, wohin das Geld der Umbuchung ging oder woher es kam
+  const linkedName = (x: Transaction) => (x.linked ? accounts.find((a) => a.id === x.linked?.accountId)?.name : undefined);
   const picked = items.filter((x) => selected?.has(x.id)).length;
 
   return (
@@ -57,6 +59,7 @@ export default function TransactionList({
           const text = [x.note, x.counterparty || x.purpose].filter(Boolean).join(" · ");
           const day = (showYear ? dateFormat : dayFormat).format(parseDate(x.date));
           const account = accountNames.get(x.accountId);
+          const partner = linkedName(x);
           const amount = `${x.type === "in" ? "+" : "−"}${eur.format(x.amount)}`;
           return (
             <li key={x.id}>
@@ -77,7 +80,14 @@ export default function TransactionList({
               >
                 <span>
                   {x.category}
-                  {x.transfer && <span className="badge">Umbuchung</span>}
+                  {x.transfer &&
+                    (partner ? (
+                      <span className="badge" title={`Verbunden mit einer Buchung im Konto „${partner}“`}>
+                        Umbuchung ↔ {partner}
+                      </span>
+                    ) : (
+                      <span className="badge">Umbuchung</span>
+                    ))}
                   {x.rhythm && <span className="badge">{rhythmLabel(x.rhythm)}</span>}
                   <small>
                     {day}

@@ -1,0 +1,43 @@
+{
+  "name": "PayPal",
+  "description": "Aktivitätenbericht aus dem PayPal-Konto (alle Transaktionen, CSV). Geld vom oder zum Bankkonto ist eine Umbuchung und wird mit der passenden Buchung dort verbunden. Autorisierungen, Einbehaltungen und Zeilen in Fremdwährung zählen nicht, in Euro zählt die Währungsumrechnung.",
+  "encoding": ["utf-8", "windows-1252"],
+  "delimiter": ",",
+  "dateFormats": ["DD.MM.YYYY"],
+  "decimalSeparator": ",",
+  "thousandsSeparator": ".",
+  "columns": {
+    "date": "Datum",
+    "amount": "Brutto",
+    "fee": "Gebühr",
+    "currency": "Währung",
+    "counterparty": "Name",
+    "purpose": ["Artikelbezeichnung", "Betreff", "Hinweis", "Typ"],
+    "transactionId": "Transaktionscode",
+    "referenceId": "Zugehöriger Transaktionscode",
+    "bookingText": "Typ"
+  },
+  "transactionKey": ["transactionId", "bookingText"],
+  "skipRows": [
+    {
+      "column": "Auswirkung auf Guthaben",
+      "equals": "Memo",
+      "reason": "Ohne Auswirkung auf das Guthaben, z. B. eine Autorisierung"
+    },
+    {
+      "column": "Typ",
+      "equals": "Einbehaltung für offene Autorisierung",
+      "reason": "Einbehaltung, die PayPal mit der Zahlung wieder freigibt"
+    },
+    {
+      "column": "Typ",
+      "equals": "Rückbuchung allgemeiner Einbehaltung",
+      "reason": "Einbehaltung, die PayPal mit der Zahlung wieder freigibt"
+    },
+    {
+      "column": "Währung",
+      "notEquals": "EUR",
+      "reason": "In Fremdwährung, in Euro zählt die Währungsumrechnung"
+    }
+  ]
+}

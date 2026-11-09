@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { parseCsv } = require("../import/csv");
 const { loadProfiles, compileProfile } = require("../import/profiles");
@@ -328,4 +329,49 @@ test("Trade Republic: Datei ohne Anführungszeichen wird genauso gelesen", () =>
     const same = quoted.find((q) => q.record.details.transactionId === row.record.details.transactionId);
     assert.deepEqual(row.record, same.record);
   }
+});
+
+test("Trade Republic: der Fingerabdruck mit Transaktions-ID bleibt, wie er war, frühere Importe gelten als Duplikat", () => {
+  const { record } = byLine(analyzeFile(trFixture, tr))[4];
+  const key = ["transaction-id", record.details.transactionId].join("\u001f");
+  assert.equal(record.hash, crypto.createHash("sha256").update(key).digest("hex"));
+});
+
+const withReference = compileProfile("mit-bezug", {
+  name: "Mit Bezug",
+  delimiter: ";",
+  dateFormats: ["DD.MM.YYYY"],
+  decimalSeparator: ",",
+  columns: { date: "Datum", amount: "Betrag", currency: "Währung", counterparty: "Name", transactionId: "ID", referenceId: "Bezug", bookingText: "Art" },
+  transactionKey: ["transactionId", "bookingText"],
+  skipRows: [{ column: "Währung", notEquals: "EUR", reason: "Fremdwährung" }],
+});
+
+test("Auslassen mit notEquals: andere Werte fallen weg, gleiche und leere Zellen bleiben", () => {
+  const rows = analyzeFile(
+    csv(["Datum;Betrag;Währung;Name;ID;Bezug;Art", "01.02.2026;-1,00;eur;A;1;;X", "01.02.2026;-2,00;;B;2;;X", "01.02.2026;-3,00;USD;C;3;;X"]),
+    withReference,
+  );
+  assert.deepEqual(rows.map((r) => [r.status, r.reason]), [["new", undefined], ["new", undefined], ["skipped", "Fremdwährung"]]);
+});
+
+test("Bezug: leere Gegenpartei kommt aus der Zeile, auf die die Zeile verweist, auch aus einer ausgelassenen", () => {
+  const rows = analyzeFile(
+    csv([
+      "Datum;Betrag;Währung;Name;ID;Bezug;Art",
+      "01.02.2026;-10,00;USD;Händler in USA;A1;;Zahlung",
+      "01.02.2026;-9,25;EUR;;A2;A1;Umrechnung",
+      "01.02.2026;9,25;EUR;;A3;A1;Gutschrift",
+      "01.02.2026;5,00;EUR;Eigener Name;A4;A1;Gutschrift",
+      "01.02.2026;1,00;EUR;;A5;FEHLT;Gutschrift",
+    ]),
+    withReference,
+  );
+  assert.deepEqual(rows.map((r) => r.record?.counterparty), [undefined, "Händler in USA", "Händler in USA", "Eigener Name", ""]);
+});
+
+test("transactionKey: dieselbe Transaktions-ID mit anderer Art ist ein anderer Umsatz", () => {
+  const hash = (line) => analyzeFile(csv(["Datum;Betrag;Währung;Name;ID;Bezug;Art", line]), withReference)[0].record.hash;
+  assert.notEqual(hash("01.02.2026;-4,60;EUR;;B1;;Abbuchung"), hash("03.02.2026;4,60;EUR;;B1;;Rückbuchung"));
+  assert.equal(hash("01.02.2026;-4,60;EUR;;B1;;Abbuchung"), hash("02.02.2026;-4,60;EUR;X;B1;;abbuchung"), "nur ID und Art zählen");
 });

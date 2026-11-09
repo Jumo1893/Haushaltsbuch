@@ -65,6 +65,7 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
     .filter((update) => Object.keys(update.changes).length);
   const changing = updates.reduce((sum, update) => sum + update.ids.length, 0);
   const withNote = items.filter((x) => x.note).length;
+  const linkedCount = items.filter((x) => x.linked).length;
   const accountNames = new Map(accounts.length > 1 ? accounts.map((a) => [a.id, a.name]) : []);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -102,6 +103,12 @@ export default function BulkEditDialog({ items, onSave, onClose }: Props) {
             <option value="yes">Umbuchung</option>
             <option value="no">Keine Umbuchung</option>
           </select>
+          {transfer === "no" && linkedCount > 0 && (
+            <small className="hint">
+              {linkedCount === 1 ? "Eine Buchung ist" : `${linkedCount} Buchungen sind`} mit einer Gegenbuchung in einem
+              anderen Konto verbunden. Die Verbindung löst sich, die Gegenbuchung gilt dann wieder für sich.
+            </small>
+          )}
         </div>
         {groups.map(({ kind, ids }) => (
           <div className="full" key={kind}>

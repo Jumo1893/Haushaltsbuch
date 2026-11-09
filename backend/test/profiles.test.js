@@ -95,6 +95,28 @@ test("Das Depot-Profil für gekürzte Exporte erwartet keine Spalten, die dort f
   assert.deepEqual([depot.depot, depot.bookings], [true, false]);
 });
 
+test("das mitgelieferte PayPal-Profil: Duplikate über Code und Art, Auslassen über Auswirkung, Art und Währung", () => {
+  const paypal = loadProfiles(path.join(__dirname, "..", "import-profiles")).get("paypal");
+  assert.ok(paypal, "Profil paypal fehlt");
+  assert.deepEqual(paypal.transactionKey, ["transactionId", "bookingText"]);
+  for (const column of ["Datum", "Brutto", "Gebühr", "Währung", "Name", "Typ", "Transaktionscode", "Zugehöriger Transaktionscode", "Auswirkung auf Guthaben"]) {
+    assert.ok(paypal.expectedColumns.includes(column), column);
+  }
+  assert.deepEqual(paypal.skipRows.at(-1), {
+    column: "Währung",
+    equals: undefined,
+    notEquals: "EUR",
+    reason: "In Fremdwährung, in Euro zählt die Währungsumrechnung",
+  });
+});
+
+test("Ohne transactionKey erkennt die Transaktions-ID allein einen Umsatz wieder", () => {
+  assert.deepEqual(compileProfile("testbank", minimal()).transactionKey, ["transactionId"]);
+  const columns = { date: "Datum", amount: "Betrag", transactionId: "ID", bookingText: "Art" };
+  const profile = compileProfile("testbank", { ...minimal(), columns, transactionKey: ["transactionId", "bookingText"] });
+  assert.deepEqual(profile.transactionKey, ["transactionId", "bookingText"]);
+});
+
 test("Spalten aus skipRows gehören zu den erwarteten Spalten", () => {
   const profile = compileProfile("testbank", {
     ...minimal(),
@@ -121,6 +143,26 @@ const invalid = {
   "leere Spaltenliste": { columns: { date: "Datum", amount: "Betrag", purpose: [] } },
   "leerer Name in Spaltenliste": { columns: { date: "Datum", amount: "Betrag", purpose: ["Zweck", ""] } },
   "unvollständige skipRows-Regel": { skipRows: [{ column: "Info" }] },
+  "skipRows-Regel mit equals und notEquals": {
+    skipRows: [{ column: "Info", equals: "a", notEquals: "b", reason: "x" }],
+  },
+  "unbekannter Eintrag in skipRows": { skipRows: [{ column: "Info", equals: "a", reason: "x", contains: "b" }] },
+  "transactionKey ohne transactionId": {
+    columns: { date: "Datum", amount: "Betrag", bookingText: "Art" },
+    transactionKey: ["bookingText"],
+  },
+  "transactionKey mit Feld, das keine Spalte hat": {
+    columns: { date: "Datum", amount: "Betrag", transactionId: "ID" },
+    transactionKey: ["transactionId", "bookingText"],
+  },
+  "transactionKey mit Betrag": {
+    columns: { date: "Datum", amount: "Betrag", transactionId: "ID" },
+    transactionKey: ["transactionId", "amount"],
+  },
+  "transactionKey doppelt": {
+    columns: { date: "Datum", amount: "Betrag", transactionId: "ID" },
+    transactionKey: ["transactionId", "transactionId"],
+  },
 };
 
 for (const [name, change] of Object.entries(invalid)) {

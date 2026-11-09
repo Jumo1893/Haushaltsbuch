@@ -19,6 +19,8 @@ const FIELDS = {
   counterparty: { type: "text" },
   purpose: { type: "text" },
   transactionId: { type: "text", detail: true },
+  // Transaktions-ID einer anderen Zeile, zu der die Zeile gehört, z. B. die Zahlung zu einer Bankgutschrift bei PayPal
+  referenceId: { type: "text", detail: true },
   account: { type: "text", detail: true },
   valueDate: { type: "date", detail: true },
   bookingText: { type: "text", detail: true },
@@ -47,7 +49,7 @@ const DEPOT_FIELDS = ["bookingText", "section", "isin", "assetName", "assetClass
 
 const KEYS = [
   "name", "description", "encoding", "delimiter", "skipLines", "dateFormats",
-  "decimalSeparator", "thousandsSeparator", "columns", "skipRows", "depot", "bookings",
+  "decimalSeparator", "thousandsSeparator", "columns", "skipRows", "depot", "bookings", "transactionKey",
 ];
 
 class ProfileError extends Error {}
@@ -107,11 +109,28 @@ function compileProfile(id, raw) {
   if (!depot && !bookings) fail("Ohne Buchungen („bookings“: false) braucht das Profil „depot“");
   if (depot) for (const field of DEPOT_FIELDS) if (!mapping[field]) fail(`„depot“ braucht das Feld „${field}“ in „columns“`);
 
+  // Regeln zum Auslassen: Die Zelle hat genau den Wert (equals) oder einen anderen (notEquals, leere Zellen zählen nicht)
   const skipRows = raw.skipRows ?? [];
   if (!Array.isArray(skipRows)) fail("„skipRows“ muss eine Liste sein");
-  for (const rule of skipRows)
-    if (!rule || !isText(rule.column) || typeof rule.equals !== "string" || !isText(rule.reason))
-      fail("Jede Regel in „skipRows“ braucht „column“, „equals“ und „reason“");
+  for (const rule of skipRows) {
+    const tests = rule ? ["equals", "notEquals"].filter((key) => rule[key] !== undefined) : [];
+    if (!rule || !isText(rule.column) || tests.length !== 1 || typeof rule[tests[0]] !== "string" || !isText(rule.reason))
+      fail("Jede Regel in „skipRows“ braucht „column“, „reason“ und entweder „equals“ oder „notEquals“");
+    for (const key of Object.keys(rule))
+      if (!["column", "equals", "notEquals", "reason"].includes(key)) fail(`unbekannter Eintrag „${key}“ in „skipRows“`);
+  }
+
+  // Felder, an denen ein Umsatz mit Transaktions-ID wiedererkannt wird. Standard ist die ID allein; steht dieselbe ID
+  // für mehrere Zeilen (bei PayPal z. B. eine Auszahlung und ihre Rückbuchung), kommen weitere Felder dazu.
+  const transactionKey = raw.transactionKey ?? ["transactionId"];
+  if (
+    raw.transactionKey !== undefined &&
+    (!Array.isArray(transactionKey) ||
+      !transactionKey.includes("transactionId") ||
+      new Set(transactionKey).size !== transactionKey.length ||
+      !transactionKey.every((field) => typeof field === "string" && mapping[field] && FIELDS[field].type === "text"))
+  )
+    fail("„transactionKey“ muss „transactionId“ und weitere Textfelder aus „columns“ enthalten, jedes einmal");
 
   return {
     id,
@@ -123,7 +142,8 @@ function compileProfile(id, raw) {
     fields,
     depot,
     bookings,
-    skipRows: skipRows.map(({ column, equals, reason }) => ({ column, equals, reason })),
+    transactionKey,
+    skipRows: skipRows.map(({ column, equals, notEquals, reason }) => ({ column, equals, notEquals, reason })),
     /** Spalten, die in der Datei vorhanden sein müssen */
     expectedColumns: [...new Set([...fields.flatMap((f) => f.columns), ...skipRows.map((r) => r.column)])],
     parseDate: (value) => {

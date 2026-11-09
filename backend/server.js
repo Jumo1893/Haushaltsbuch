@@ -29,6 +29,7 @@ const {
 const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./stats");
 const { withDepots, withDepotMonths, withDepotDays, depotView, refreshDepot } = require("./depot");
 const { startSchedule, autoPriceState, setAutoPrices } = require("./schedule");
+const { linkTransfers, unlink } = require("./paypal");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
 // als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
@@ -37,9 +38,14 @@ const profiles = loadProfiles(path.join(__dirname, "import-profiles"));
 const app = express();
 app.use(express.json());
 
+// linked: die Gegenbuchung in einem anderen Konto (siehe paypal.js), sonst null
 const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
   to_char(t.date, 'YYYY-MM-DD') AS date, t.note, t.counterparty, t.purpose, t.import_id AS "importId",
-  t.account_id AS "accountId", ${TRANSFER} AS transfer, t.rhythm, t.rule_id AS "ruleId" FROM transactions t`;
+  t.account_id AS "accountId", ${TRANSFER} AS transfer, t.rhythm, t.rule_id AS "ruleId",
+  CASE WHEN l.id IS NOT NULL THEN json_build_object('id', l.id, 'accountId', l.account_id, 'type', l.type,
+    'amount', l.amount::float8, 'date', to_char(l.date, 'YYYY-MM-DD'), 'counterparty', l.counterparty,
+    'purpose', l.purpose) END AS linked
+  FROM transactions t LEFT JOIN transactions l ON l.id = t.linked_id`;
 
 // Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen; auto: was sie automatisch bekommt
 const CATEGORIES = `SELECT c.id, c.kind, c.name, c.name = '${FALLBACK_CATEGORY}' AS fixed,
@@ -190,6 +196,10 @@ const SCHEMA = [
   // Gemerkte Zuordnung, der die Buchung folgt; leer: keiner
   "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS rule_id INTEGER REFERENCES rules(id) ON DELETE SET NULL",
   "CREATE INDEX IF NOT EXISTS idx_tx_rule_id ON transactions(rule_id)",
+  // Gegenbuchung in einem anderen Konto, z. B. die Lastschrift zu einer Bankgutschrift bei PayPal (siehe paypal.js).
+  // Beide zeigen aufeinander und gelten als Umbuchung; wird eine gelöscht, verliert die andere die Verbindung.
+  "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL",
+  "CREATE INDEX IF NOT EXISTS idx_tx_linked_id ON transactions(linked_id)",
 ];
 
 /** Führt fn mit einer eigenen Verbindung in einer Datenbanktransaktion aus und liefert ihr Ergebnis */
@@ -270,12 +280,15 @@ async function init() {
     await assignLegacyAccounts(client);
     await client.query("ALTER TABLE transactions ALTER COLUMN account_id SET NOT NULL");
   });
-  // Gemerkte Zuordnungen nachziehen, z. B. wenn eine Buchung inzwischen als Umbuchung gilt; dann bisherige Ausgaben in
-  // der Auffangkategorie zuordnen, z. B. nach dem Einführen oder Erweitern der automatischen Zuordnung
+  // Geld zwischen PayPal und eigenen Konten verbinden, z. B. nach einer Änderung der Regeln dafür. Dann gemerkte
+  // Zuordnungen nachziehen, z. B. wenn eine Buchung inzwischen als Umbuchung gilt; dann bisherige Ausgaben in der
+  // Auffangkategorie zuordnen, z. B. nach dem Einführen oder Erweitern der automatischen Zuordnung
   const ruled = await inTransaction(async (client) => {
+    const linked = (await linkTransfers(client)).length;
     const result = await applyRules(client);
-    return { ...result, auto: await autoCategorize(client) };
+    return { ...result, linked, auto: await autoCategorize(client) };
   });
+  if (ruled.linked) console.log(`Verbunden: ${ruled.linked} Geldbewegungen bei PayPal mit Buchungen anderer Konten.`);
   const summary = (counts) => (counts.length ? ` (${counts.map((a) => `${a.name} ${a.count}`).join(", ")})` : "");
   if (ruled.ids.length || ruled.reverted) {
     console.log(
@@ -347,12 +360,24 @@ app.patch("/api/transactions", async (req, res) => {
   // Spaltennamen stammen aus readBulkChange, nicht aus der Anfrage
   const fields = Object.keys(bulk.changes);
   try {
-    const { rowCount } = await pool.query(
-      `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = ANY($1)`,
-      [bulk.ids, ...fields.map((f) => bulk.changes[f])]);
-    res.json({ updated: rowCount });
+    const updated = await inTransaction(async (client) => {
+      const { rowCount } = await client.query(
+        `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = ANY($1)`,
+        [bulk.ids, ...fields.map((f) => bulk.changes[f])]);
+      if (bulk.changes.transfer_override === false) await unlinkManually(client, bulk.ids);
+      return rowCount;
+    });
+    res.json({ updated });
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
+
+/**
+ * Wer eine verbundene Buchung von Hand zu „keine Umbuchung“ macht, löst die Verbindung. Für die Gegenbuchung gilt dann
+ * wieder, was sonst für sie gilt, auch die gemerkten Zuordnungen.
+ */
+async function unlinkManually(db, ids) {
+  await applyRules(db, { ids: await unlink(db, ids) });
+}
 
 // Ändert nur die übergebenen Felder. Richtung, Betrag, Datum und Konto importierter Buchungen bleiben, wie sie sind.
 app.patch("/api/transactions/:id", async (req, res) => {
@@ -367,9 +392,12 @@ app.patch("/api/transactions/:id", async (req, res) => {
       return res.status(409).json({ error: "Richtung, Betrag, Datum und Konto stehen durch den Import fest." });
     // Spaltennamen stammen aus readTransaction, nicht aus der Anfrage
     const fields = Object.keys(changes);
-    await pool.query(
-      `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = $1`,
-      [id, ...fields.map((f) => changes[f])]);
+    await inTransaction(async (client) => {
+      await client.query(
+        `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = $1`,
+        [id, ...fields.map((f) => changes[f])]);
+      if (changes.transfer_override === false) await unlinkManually(client, [id]);
+    });
     const r = await pool.query(`${SELECT} WHERE t.id = $1`, [id]);
     res.json(r.rows[0]);
   } catch (e) {

@@ -1,10 +1,12 @@
 // Auswertungen für Übersicht und Kontoseiten: Umbuchungen, Kontostände und Werte je Monat
 
 const { TRADE_BOOKING_TEXTS } = require("./depot");
+const { PAYPAL_TRANSFER_TYPES } = require("./paypal");
 
 /**
  * Buchungsarten von Trade Republic für Geld von und zu Konten bei anderen Banken und zum Depot. Ältere Exporte nennen
- * dafür keine IBAN, die Art ist dann der einzige Hinweis auf eine Umbuchung.
+ * dafür keine IBAN, die Art ist dann der einzige Hinweis auf eine Umbuchung. Dazu die Arten im PayPal-Export für Geld
+ * vom und zum Bankkonto (siehe paypal.js).
  */
 const TRANSFER_BOOKING_TEXTS = [
   "CUSTOMER_INPAYMENT",
@@ -12,6 +14,7 @@ const TRANSFER_BOOKING_TEXTS = [
   "TRANSFER_INSTANT_INBOUND",
   "TRANSFER_INSTANT_OUTBOUND",
   ...TRADE_BOOKING_TEXTS,
+  ...PAYPAL_TRANSFER_TYPES,
 ];
 
 /** Betrag der Buchung t mit Vorzeichen: Einnahmen positiv, Ausgaben negativ */
@@ -22,12 +25,13 @@ const COUNTERPARTY_IBAN = "upper(regexp_replace(t.details->>'counterpartyIban', 
 
 /**
  * true, wenn die Buchung t eine Umbuchung zwischen eigenen Konten ist. Was von Hand festgelegt ist
- * (transfer_override), gilt immer. Sonst wird bei jeder Abfrage neu erkannt, eine später eingetragene IBAN gilt
- * also auch für alte Buchungen: Die IBAN der Gegenpartei gehört zu einem anderen eigenen Konto oder, wenn der
- * Export keine IBAN nennt, die Buchungsart steht für Geld von und zu einer anderen Bank oder dem Depot.
+ * (transfer_override), gilt immer. Sonst ist sie mit einer Gegenbuchung in einem anderen Konto verbunden (linked_id,
+ * siehe paypal.js), oder es wird bei jeder Abfrage neu erkannt, eine später eingetragene IBAN gilt also auch für alte
+ * Buchungen: Die IBAN der Gegenpartei gehört zu einem anderen eigenen Konto oder, wenn der Export keine IBAN nennt,
+ * die Buchungsart steht für Geld von und zu einer anderen Bank, dem Depot oder PayPal.
  * Umbuchungen zählen in den Auswertungen weder als Einnahme noch als Ausgabe.
  */
-const TRANSFER = `COALESCE(t.transfer_override, EXISTS (
+const TRANSFER = `COALESCE(t.transfer_override, t.linked_id IS NOT NULL OR EXISTS (
   SELECT 1 FROM accounts own WHERE own.id <> t.account_id AND ${COUNTERPARTY_IBAN} = ANY(own.extra_ibans || own.iban))
   OR (COALESCE(${COUNTERPARTY_IBAN}, '') = ''
     AND t.details->>'bookingText' IN (${TRANSFER_BOOKING_TEXTS.map((text) => `'${text}'`).join(",")})), false)`;

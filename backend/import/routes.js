@@ -17,6 +17,7 @@ const { FALLBACK_CATEGORY } = require("../categories");
 const { autoCategorize } = require("../autocategories");
 const { applyRules, mergeCounts } = require("../rules");
 const { depotOf } = require("../depot");
+const { linkTransfers, linkedAccounts, previewLinks } = require("../paypal");
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Kategorie für importierte Umsätze, die sich nicht automatisch zuordnen lassen (siehe rules.js und autocategories.js) */
@@ -66,14 +67,19 @@ async function countExistingMovements(db, rows) {
   return new Map(found.map((f) => [f.import_hash, f.n]));
 }
 
-/** Konten je eigener IBAN für die Vorschau; accountId null: Das Konto wird beim Import angelegt bzw. gewählt. */
+/**
+ * Konten je eigener IBAN für die Vorschau; accountId null: Das Konto wird beim Import angelegt bzw. gewählt. Dazu, mit
+ * welchen Buchungen anderer Konten der Import neue Umsätze verbinden würde (siehe paypal.js).
+ */
 async function previewAccounts(db, rows) {
   const groups = groupByIban(rows);
   const known = await accountsForIbans(db, groups.map((g) => g.iban).filter(Boolean));
-  return groups.map(({ iban, ...counts }) => {
+  const accounts = groups.map(({ iban, ...counts }) => {
     const account = iban ? known.get(iban) : null;
     return { iban, accountId: account?.id ?? null, accountName: account?.name ?? null, ...counts };
   });
+  const links = await previewLinks(db, rows, (record) => known.get(ownIban(record))?.id ?? null);
+  return { accounts, links };
 }
 
 /** Im Import-Dialog gewähltes Konto für Umsätze ohne eigene IBAN, null wenn keins gewählt ist */
@@ -217,7 +223,7 @@ function createImportRouter(pool, profiles) {
       profile: { id: profile.id, name: profile.name },
       fileName,
       ...buildPreview(rows),
-      accounts: await previewAccounts(pool, rows),
+      ...(await previewAccounts(pool, rows)),
     });
   }));
 
@@ -248,10 +254,17 @@ function createImportRouter(pool, profiles) {
         [profile.id, profile.name, fileName, toSave.length, movements.length, duplicatesSkipped, counts.skipped, counts.invalid],
       );
       if (toSave.length) await insertTransactions(client, run.id, toSave, ids);
-      // Zuerst die gemerkten Zuordnungen, dann für die übrigen Ausgaben die automatischen Kategorien
+      // Geld zwischen PayPal und eigenen Konten verbinden, in beide Richtungen. Das zuerst, denn verbundene Buchungen
+      // sind Umbuchungen und bekommen keine Kategorie für Ausgaben.
+      const pairs = toSave.length ? await linkTransfers(client) : [];
+      // Dann die gemerkten Zuordnungen, dann für die übrigen Ausgaben die automatischen Kategorien
       const autoCategorized = toSave.length
         ? mergeCounts((await applyRules(client, { importId: run.id })).counts, await autoCategorize(client, run.id))
         : [];
+      // Ältere Buchungen, die jetzt eine Gegenbuchung haben, verlieren eine gemerkte Zuordnung, die nicht mehr passt
+      const older = pairs.flatMap(({ paypal, other }) => [paypal, other]).filter((t) => t.importId !== run.id);
+      await applyRules(client, { ids: older.map((t) => t.id) });
+      const linked = await linkedAccounts(client, pairs, run.id);
       if (depot) await insertMovements(client, run.id, movements, depot.id);
       await client.query("COMMIT");
       res.status(201).json({
@@ -263,6 +276,7 @@ function createImportRouter(pool, profiles) {
         category: IMPORT_CATEGORY,
         autoCategorized,
         accounts,
+        linked,
         depot: depot && { id: depot.id, name: depot.name, imported: movements.length, created: depot.isNew },
       });
     } catch (e) {

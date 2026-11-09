@@ -52,7 +52,28 @@ function analyzeFile(buffer, profile, { maxRows = MAX_ROWS } = {}) {
   if (data.length > maxRows) {
     throw new ImportError(422, `Die Datei enthält ${data.length} Datensätze, erlaubt sind höchstens ${maxRows}. Bitte einen kürzeren Zeitraum exportieren.`);
   }
-  return data.map((rec) => readRow(rec, profile, index, head.fields.length));
+  const names = counterpartiesById(data, profile, index);
+  return data.map((rec) => readRow(rec, profile, index, head.fields.length, names));
+}
+
+/**
+ * Gegenpartei je Transaktions-ID aus allen Zeilen der Datei, auch aus ausgelassenen. Damit bekommt eine Zeile ohne
+ * Gegenpartei die der Zeile, auf die sie verweist (Feld referenceId), bei PayPal z. B. eine Bankgutschrift den Händler
+ * der Zahlung, für die sie ist. Ohne referenceId im Profil null.
+ */
+function counterpartiesById(data, profile, index) {
+  const field = (name) => profile.fields.find((f) => f.field === name);
+  const id = field("transactionId");
+  const counterparty = field("counterparty");
+  if (!field("referenceId") || !id || !counterparty) return null;
+  const names = new Map();
+  for (const { fields } of data) {
+    const value = (f) => f.columns.map((c) => cleanText(fields[index.get(c)] ?? "")).find(Boolean) ?? "";
+    const key = neutralizeFormula(value(id));
+    const name = value(counterparty);
+    if (key && name && !names.has(key)) names.set(key, neutralizeFormula(name));
+  }
+  return names;
 }
 
 /** Ordnet die Spalten des Profils den Positionen in der Kopfzeile zu. */
@@ -76,7 +97,7 @@ function matchHeader(profile, header) {
   return new Map(profile.expectedColumns.map((c) => [c, positions.get(normalize(c))]));
 }
 
-function readRow({ line, fields }, profile, index, width) {
+function readRow({ line, fields }, profile, index, width, names) {
   const invalid = (reason) => ({ line, status: "invalid", reason });
   if (fields.length < width || fields.slice(width).some((f) => f.trim() !== "")) {
     return invalid(`Die Zeile hat ${fields.length} statt ${width} Spalten.`);
@@ -92,7 +113,9 @@ function readRow({ line, fields }, profile, index, width) {
   };
 
   for (const rule of profile.skipRows) {
-    if (cell(rule.column).toLowerCase() === normalize(rule.equals)) return { line, status: "skipped", reason: rule.reason };
+    const value = cell(rule.column).toLowerCase();
+    const skip = rule.notEquals === undefined ? value === normalize(rule.equals) : value !== "" && value !== normalize(rule.notEquals);
+    if (skip) return { line, status: "skipped", reason: rule.reason };
   }
 
   const errors = [];
@@ -137,9 +160,10 @@ function readRow({ line, fields }, profile, index, width) {
 
   if (errors.length) return invalid(errors.join("; "));
   if (Math.abs(record.cents) >= 1e12) return invalid("Der Betrag ist zu groß");
+  if (!record.counterparty && names?.has(record.details.referenceId)) record.counterparty = names.get(record.details.referenceId);
   const movement = profile.depot ? readMovement(record) : null;
   if (profile.bookings && record.cents !== 0) {
-    record.hash = fingerprint(record);
+    record.hash = fingerprint(record, profile.transactionKey);
     return { line, status: "new", record, ...(movement && { movement }) };
   }
   if (movement) return { line, status: "depot", movement };
@@ -149,12 +173,12 @@ function readRow({ line, fields }, profile, index, width) {
 
 /**
  * Fingerabdruck, an dem ein bereits importierter Umsatz wiedererkannt wird. Liefert das Format eine
- * Transaktions-ID, genügt sie. Sonst zählen eigenes Konto, Buchungstag, Betrag, Gegenpartei (Name und IBAN)
- * und Verwendungszweck.
+ * Transaktions-ID, genügt sie, bzw. die Felder in `key` (siehe transactionKey im Profil). Sonst zählen eigenes Konto,
+ * Buchungstag, Betrag, Gegenpartei (Name und IBAN) und Verwendungszweck.
  */
-function fingerprint(r) {
+function fingerprint(r, fields = ["transactionId"]) {
   const parts = r.details.transactionId
-    ? ["transaction-id", r.details.transactionId]
+    ? ["transaction-id", ...fields.map((field) => r.details[field] ?? r[field])]
     : [r.details.account, r.date, r.cents, r.counterparty, r.details.counterpartyIban, r.purpose];
   const key = parts.map((p) => normalize(String(p ?? ""))).join("\u001f");
   return crypto.createHash("sha256").update(key).digest("hex");

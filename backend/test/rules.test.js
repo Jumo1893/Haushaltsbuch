@@ -99,19 +99,27 @@ test("Anwenden: liefert zugeordnete Buchungen je Kategorie und zählt die zurüc
   const result = await applyRules(db, { importId: 9 });
   assert.deepEqual(result, { ids: [1, 2, 3], counts: [{ name: "Freizeit", count: 2 }], reverted: 1 });
   const [{ sql, params }] = db.queries;
-  assert.deepEqual(params, [FALLBACK_CATEGORY, 9, null], "nur dieser Import");
+  assert.deepEqual(params, [FALLBACK_CATEGORY, 9, null, null], "nur dieser Import");
   assert.match(sql, /NOT t\.category_manual/, "von Hand gewählte bleiben");
   assert.match(sql, /ORDER BY r\.amount IS NULL/, "die Zuordnung mit Betrag geht vor");
 });
 
-test("Anwenden: ohne Angabe für alle Buchungen, mit key nur für eine Gegenpartei", async () => {
+test("Anwenden: ohne Angabe für alle Buchungen, mit key nur für eine Gegenpartei, mit ids nur für diese", async () => {
   const db = fakeDb([[/^WITH candidates/, { rows: [] }]]);
   assert.deepEqual(await applyRules(db), { ids: [], counts: [], reverted: 0 });
   await applyRules(db, { key: "anthropic* claude sub" });
+  await applyRules(db, { ids: [4, 7] });
   assert.deepEqual(db.queries.map((q) => q.params), [
-    [FALLBACK_CATEGORY, null, null],
-    [FALLBACK_CATEGORY, null, "anthropic* claude sub"],
+    [FALLBACK_CATEGORY, null, null, null],
+    [FALLBACK_CATEGORY, null, "anthropic* claude sub", null],
+    [FALLBACK_CATEGORY, null, null, [4, 7]],
   ]);
+});
+
+test("Anwenden: eine leere Liste von ids fragt die Datenbank gar nicht erst", async () => {
+  const db = fakeDb([]);
+  assert.deepEqual(await applyRules(db, { ids: [] }), { ids: [], counts: [], reverted: 0 });
+  assert.equal(db.queries.length, 0);
 });
 
 /** Antworten für rememberRule: die Buchung, die Kategorie und was das Anwenden ändert */
@@ -142,7 +150,7 @@ test("Merken: mit Betrag, gilt sofort für die anderen Buchungen der Gegenpartei
   const category = db.queries.find((q) => q.sql.startsWith("SELECT id FROM categories"));
   assert.deepEqual(category.params, ["out", "Freizeit"], "Kategorie der Art der Buchung");
   const apply = db.queries.find((q) => q.sql.startsWith("WITH candidates"));
-  assert.deepEqual(apply.params, [FALLBACK_CATEGORY, null, "anthropic* claude sub"], "nur diese Gegenpartei");
+  assert.deepEqual(apply.params, [FALLBACK_CATEGORY, null, "anthropic* claude sub", null], "nur diese Gegenpartei");
 });
 
 test("Merken: bei jedem Betrag ohne Betrag in der Zuordnung", async () => {
@@ -182,7 +190,7 @@ test("Löschen: Buchungen der Zuordnung gehen zurück, dann gilt, was sonst pass
       `SELECT [11]`,
       `UPDATE [11,"${FALLBACK_CATEGORY}"]`,
       `DELETE [11]`,
-      `WITH ${JSON.stringify([FALLBACK_CATEGORY, null, "anthropic* claude sub"])}`,
+      `WITH ${JSON.stringify([FALLBACK_CATEGORY, null, "anthropic* claude sub", null])}`,
     ],
   );
   assert.match(db.queries[1].sql, /rhythm = NULL, rule_id = NULL WHERE rule_id = \$1/);

@@ -44,6 +44,18 @@ export interface Transaction extends NewTransaction {
   purpose: string;
   importId: number | null; // gesetzt, wenn die Buchung aus einem CSV-Import stammt
   ruleId: number | null; // gemerkte Zuordnung, der die Buchung folgt
+  linked: LinkedTransaction | null; // Gegenbuchung in einem anderen Konto; beide gelten als Umbuchung
+}
+
+/** Gegenbuchung in einem anderen Konto, z. B. die Lastschrift im Girokonto zu einer Bankgutschrift bei PayPal */
+export interface LinkedTransaction {
+  id: number;
+  accountId: number;
+  type: TxType;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  counterparty: string;
+  purpose: string;
 }
 
 /** Für welche Buchungen einer Gegenpartei eine Zuordnung gemerkt wird: nur mit dem Betrag der Buchung oder mit jedem */
@@ -273,6 +285,13 @@ export interface ImportAccount {
   duplicate: number;
 }
 
+/** Konto mit der Zahl seiner Buchungen, mit denen ein Import neue Umsätze als Gegenbuchung verbindet */
+export interface LinkedAccount {
+  id: number;
+  name: string;
+  count: number;
+}
+
 export interface ImportPreview {
   profile: { id: string; name: string };
   fileName: string;
@@ -282,6 +301,7 @@ export interface ImportPreview {
   errors: { line: number; reason: string }[];
   skipped: { reason: string; count: number }[];
   accounts: ImportAccount[];
+  links: LinkedAccount[]; // Gegenbuchungen in anderen Konten, z. B. Lastschriften zu Bankgutschriften bei PayPal
   depot: { new: number; duplicate: number; positions: number }; // Wertpapierbewegungen der Datei
 }
 
@@ -296,6 +316,8 @@ export interface ImportResult {
   /** Automatisch zugeordnete Umsätze je Kategorie, die meisten zuerst */
   autoCategorized: { name: string; count: number }[];
   accounts: { id: number; name: string; imported: number; created: boolean }[];
+  /** Konten, deren Buchungen jetzt mit importierten Umsätzen verbunden sind, mit der Zahl der Paare */
+  linked: LinkedAccount[];
   depot: { id: number; name: string; imported: number; created: boolean } | null;
 }
 

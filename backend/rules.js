@@ -37,16 +37,18 @@ const mergeCounts = (...lists) => countByName(lists.flat());
  * und Gegenpartei bekommt Kategorie und Rhythmus der Zuordnung. Die mit ihrem Betrag geht der für jeden Betrag vor.
  * Folgt eine Buchung einer Zuordnung, die nicht mehr passt, z. B. weil sie inzwischen als Umbuchung gilt, geht sie
  * zurück in die Auffangkategorie, ohne Rhythmus. Mit importId nur die Buchungen dieses Imports, mit key nur die dieser
- * Gegenpartei (wie matchKey). Liefert die IDs der zugeordneten Buchungen, ihre Zahl je Kategorie und die Zahl der
- * zurückgesetzten.
+ * Gegenpartei (wie matchKey), mit ids nur diese Buchungen. Liefert die IDs der zugeordneten Buchungen, ihre Zahl je
+ * Kategorie und die Zahl der zurückgesetzten.
  */
-async function applyRules(db, { importId = null, key = null } = {}) {
+async function applyRules(db, { importId = null, key = null, ids = null } = {}) {
+  if (ids && !ids.length) return { ids: [], counts: [], reverted: 0 };
   const { rows } = await db.query(
     `WITH candidates AS (
        SELECT t.id, t.type, t.amount, ${KIND} AS kind, ${matchKey("t.counterparty")} AS key
        FROM transactions t
        WHERE ${FREE} AND t.counterparty <> ''
          AND ($2::int IS NULL OR t.import_id = $2) AND ($3::text IS NULL OR ${matchKey("t.counterparty")} = $3)
+         AND ($4::int[] IS NULL OR t.id = ANY($4))
      ), best AS (
        SELECT c.id, (SELECT r.id FROM rules r
          WHERE r.kind = c.kind AND r.type = c.type AND r.match_key = c.key AND (r.amount = c.amount OR r.amount IS NULL)
@@ -59,7 +61,7 @@ async function applyRules(db, { importId = null, key = null } = {}) {
        AND (t.rule_id IS DISTINCT FROM r.id OR t.category IS DISTINCT FROM COALESCE(cat.name, $1)
          OR t.rhythm IS DISTINCT FROM r.rhythm)
      RETURNING t.id, t.category AS name, r.id IS NOT NULL AS assigned`,
-    [FALLBACK_CATEGORY, importId, key],
+    [FALLBACK_CATEGORY, importId, key, ids],
   );
   const assigned = rows.filter((row) => row.assigned);
   return { ids: assigned.map((row) => row.id), counts: countByName(assigned), reverted: rows.length - assigned.length };
