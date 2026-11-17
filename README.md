@@ -181,7 +181,10 @@ oder ein Ausgleich frei eintragen und eine Ausgabe ohne Buchung aufteilen (siehe
 
 **Person** (`/schulden/ID`): Stand mit der Person und alle Einträge, neueste zuerst. Hier lassen sich Schulden und
 Ausgleich eintragen, beim Ausgleich mit dem offenen Betrag als Vorschlag, Einträge bearbeiten und löschen sowie die
-Person umbenennen oder mit allen Einträgen löschen.
+Person umbenennen oder mit allen Einträgen löschen. Über der Liste wechselt „Alle“ / „Offene Schulden“ die Ansicht
+(steht in der Adresse, `?ansicht=offen`). „Offene Schulden“ zeigt nur Schulden in beiden Richtungen, die noch kein
+Ausgleich begleicht, mit ihrer Summe je Richtung. Weicht die vom Stand ab, nennt die Seite den Grund: Ein Ausgleich vom
+Gesamtbetrag senkt den Stand, ohne einzelne Schulden zu begleichen.
 
 **Kategorien** (`/kategorien`): die Kategorien je Art mit der Zahl ihrer Buchungen. Neue Kategorien lassen sich auch
 direkt in jeder Kategorieauswahl unter „Neue Kategorie anlegen …“ anlegen.

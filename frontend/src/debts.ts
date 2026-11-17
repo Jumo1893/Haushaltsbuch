@@ -44,6 +44,9 @@ export const isRepayable = (tx: Pick<Transaction, "type" | "transfer">) => tx.ty
 export const isOpenDebt = (d: Debt, direction: 1 | -1) =>
   d.kind === "debt" && Math.sign(d.amount) === -direction && d.settledBy === null;
 
+/** Offene Schuld in einer der beiden Richtungen: Kein Ausgleich hat sie als beglichen markiert */
+export const isUnsettled = (d: Debt) => d.kind === "debt" && d.settledBy === null;
+
 /**
  * Verteilt beglichene Schulden auf mehrere Zahlungen, beide in zeitlicher Reihenfolge (Beträge in Cent): Jede Schuld
  * gehört zu der Zahlung, in deren Summe sie beginnt, die ältesten Schulden also zu den ältesten Zahlungen. Was über alle

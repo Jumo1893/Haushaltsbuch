@@ -3,11 +3,16 @@ import { ApiError, deleteDebt, deletePerson, fetchDebts, fetchPeople, renamePers
 import DebtDialog from "../components/DebtDialog";
 import DebtList from "../components/DebtList";
 import PersonDialog from "../components/PersonDialog";
+import Segmented from "../components/Segmented";
 import SplitDialog from "../components/SplitDialog";
 import { OFFLINE, useData, useLoad } from "../data";
-import { money, roundCents } from "../format";
-import { Link, navigate, useTitle } from "../router";
+import { isUnsettled } from "../debts";
+import { eur, money, roundCents } from "../format";
+import { Link, navigate, useLocation, useTitle } from "../router";
 import type { Debt, DebtKind } from "../types";
+
+/** Welche Einträge die Liste zeigt */
+type View = "all" | "open";
 
 /** Schulden mit einer Person: Stand, Einträge, neue Schulden und Ausgleich */
 export default function PersonPage({ id }: { id: number }) {
@@ -18,6 +23,10 @@ export default function PersonPage({ id }: { id: number }) {
   const [error, setError] = useState("");
   const person = people.data?.find((p) => p.id === id);
   useTitle(person?.name ?? "Schulden");
+  // Alle Einträge oder nur die offenen Schulden; die Wahl steht in der Adresse (?ansicht=offen)
+  const { query } = useLocation();
+  const view: View = query.get("ansicht") === "offen" ? "open" : "all";
+  const setView = (next: View) => navigate(next === "open" ? `/schulden/${id}?ansicht=offen` : `/schulden/${id}`, { replace: true });
 
   if (!people.data) {
     return people.failed ? (
@@ -41,6 +50,25 @@ export default function PersonPage({ id }: { id: number }) {
 
   const balance = roundCents(person.balance);
   const close = () => setDialog(null);
+  const all = entries.data ?? [];
+  // Offen: Schulden in beide Richtungen, die noch kein Ausgleich als beglichen markiert hat
+  const open = all.filter(isUnsettled);
+  const shown = view === "open" ? open : all;
+  const theirs = roundCents(open.reduce((sum, d) => sum + Math.max(d.amount, 0), 0));
+  const mine = roundCents(open.reduce((sum, d) => sum + Math.max(-d.amount, 0), 0));
+  // Summe der offenen Schulden je Richtung; weicht sie vom Stand ab, sagt der Text warum
+  const sums = [
+    theirs > 0 && `${person.name} schuldet dir daraus ${eur.format(theirs)}`,
+    mine > 0 && `${theirs > 0 ? "du" : "Du"} schuldest ${person.name} daraus ${eur.format(mine)}`,
+  ].filter(Boolean);
+  const openText = [
+    `${sums.join(", ")}.`,
+    roundCents(theirs - mine) !== balance &&
+      "Der Stand weicht davon ab: Ein Ausgleich vom Gesamtbetrag senkt den Stand, ohne einzelne Schulden zu begleichen. " +
+        "Solche Schulden bleiben hier offen, bis ein Ausgleich sie begleicht.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const remove = async () => {
     const what = person.entryCount
@@ -124,12 +152,26 @@ export default function PersonPage({ id }: { id: number }) {
       </div>
 
       <section className={entries.loading ? "stale" : undefined}>
-        <h2>Einträge</h2>
+        <div className="section-head">
+          <h2>{view === "open" ? "Offene Schulden" : "Einträge"}</h2>
+          <Segmented
+            label="Anzeigen"
+            options={[
+              ["all", entries.data ? `Alle (${all.length})` : "Alle"],
+              ["open", entries.data ? `Offene Schulden (${open.length})` : "Offene Schulden"],
+            ]}
+            value={view}
+            onChange={setView}
+          />
+        </div>
+        {view === "open" && entries.data && open.length > 0 && (
+          <p className="hint open-sum">{openText}</p>
+        )}
         {entries.data &&
-          (entries.data.length ? (
-            <DebtList items={entries.data} onEdit={setDialog} onDelete={removeEntry} />
+          (shown.length ? (
+            <DebtList items={shown} onEdit={setDialog} onDelete={removeEntry} />
           ) : (
-            <p className="empty">Keine Einträge.</p>
+            <p className="empty">{view === "open" ? "Keine offenen Schulden." : "Keine Einträge."}</p>
           ))}
       </section>
 
