@@ -10,8 +10,11 @@ const DEBT_KINDS = ["debt", "settlement"];
 const MAX_NAME = 40;
 const MAX_REASON = 100;
 
-/** Höchstzahl der Einträge, die sich in einem Schritt anlegen lassen, z. B. beim Aufteilen einer Ausgabe */
-const MAX_ENTRIES = 50;
+/**
+ * Höchstzahl der Einträge, die sich in einem Schritt anlegen lassen, z. B. beim Aufteilen vieler Buchungen auf mehrere
+ * Personen, und der Buchungen, deren Einträge sie dabei ersetzen
+ */
+const MAX_ENTRIES = 5000;
 
 /** Fehler in der Eingabe, den die API mit status und der Meldung beantwortet; bricht die Datenbanktransaktion ab */
 class DebtError extends Error {
@@ -71,11 +74,19 @@ function readEntry(body, partial = false) {
   return { values };
 }
 
-/** Prüft { entries: [...] } zum Anlegen mehrerer Einträge und liefert { entries } oder { error } */
+/**
+ * Prüft { entries: [...], replace: [...] } zum Anlegen mehrerer Einträge. replace ist optional: Buchungen (IDs), deren
+ * bisherige Einträge im selben Schritt wegfallen, z. B. wenn sie neu aufgeteilt werden. Liefert { entries, replace }
+ * (replace ohne Doppelte) oder { error }.
+ */
 function readEntries(body) {
   const list = body?.entries;
   if (!Array.isArray(list) || !list.length || list.length > MAX_ENTRIES) {
     return { error: `Bitte 1 bis ${MAX_ENTRIES} Einträge angeben.` };
+  }
+  const replace = body.replace ?? [];
+  if (!Array.isArray(replace) || replace.length > MAX_ENTRIES || !replace.every((id) => Number.isInteger(id) && id > 0)) {
+    return { error: "Ungültige Buchungen zum Ersetzen." };
   }
   const entries = [];
   for (const item of list) {
@@ -83,7 +94,7 @@ function readEntries(body) {
     if (error) return { error };
     entries.push(values);
   }
-  return { entries };
+  return { entries, replace: [...new Set(replace)] };
 }
 
 /** Filter für GET /api/debts: person oder transaction (IDs); liefert { person, transaction } oder { error } */
@@ -122,14 +133,20 @@ function bookingProblem(booking, amounts) {
 
 /**
  * Prüft die Einträge zur Buchung id (siehe bookingProblem) und sperrt sie dafür bis zum Ende der Datenbanktransaktion.
- * Zwei gleichzeitige Änderungen prüfen so nacheinander und sehen die Einträge der anderen. Wirft bei einem Problem.
+ * Zwei gleichzeitige Änderungen prüfen so nacheinander und sehen die Einträge der anderen. Wirft bei einem Problem, mit
+ * named nennt die Meldung Tag und Text der Buchung, z. B. wenn mehrere auf einmal geprüft werden.
  */
-async function checkBooking(db, id) {
-  const { rows: [booking] } = await db.query("SELECT type, amount FROM transactions WHERE id = $1 FOR UPDATE", [id]);
+async function checkBooking(db, id, named = false) {
+  const { rows: [booking] } = await db.query(
+    `SELECT type, amount, to_char(date, 'DD.MM.YYYY') AS day,
+       COALESCE(NULLIF(counterparty, ''), NULLIF(note, ''), category) AS label
+     FROM transactions WHERE id = $1 FOR UPDATE`,
+    [id],
+  );
   if (!booking) return;
   const { rows } = await db.query("SELECT amount FROM debts WHERE transaction_id = $1", [id]);
   const problem = bookingProblem(booking, rows.map((r) => r.amount));
-  if (problem) throw new DebtError(problem, 409);
+  if (problem) throw new DebtError(named ? `Buchung vom ${booking.day} (${booking.label}): ${problem}` : problem, 409);
 }
 
 /**
@@ -155,21 +172,29 @@ async function personIds(db, names) {
 
 /**
  * Legt Einträge an (siehe readEntries), unbekannte Personen dabei auch, und prüft die Buchungen, zu denen sie gehören.
- * Liefert die IDs der neuen Einträge. In einer Datenbanktransaktion aufrufen, sie wirft bei einem Problem.
+ * Vorher fallen die bisherigen Einträge der Buchungen in replace weg. Liefert die IDs der neuen Einträge. In einer
+ * Datenbanktransaktion aufrufen, sie wirft bei einem Problem.
  */
-async function createEntries(db, entries) {
+async function createEntries(db, entries, replace = []) {
+  if (replace.length) await db.query("DELETE FROM debts WHERE transaction_id = ANY($1::int[])", [replace]);
   const people = await personIds(db, entries.map((e) => e.person));
-  const ids = [];
-  for (const e of entries) {
-    const { rows: [row] } = await db.query(
-      `INSERT INTO debts (person_id, date, amount, kind, reason, transaction_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [people.get(e.person), e.date, e.amount, e.kind, e.reason ?? "", e.transaction_id],
-    );
-    ids.push(row.id);
-  }
-  for (const id of new Set(entries.map((e) => e.transaction_id).filter((id) => id !== null))) await checkBooking(db, id);
-  return ids;
+  // In einer Abfrage, beim Aufteilen vieler Buchungen sind es schnell Hunderte
+  const { rows } = await db.query(
+    `INSERT INTO debts (person_id, date, amount, kind, reason, transaction_id)
+     SELECT * FROM unnest($1::int[], $2::date[], $3::numeric[], $4::text[], $5::text[], $6::int[])
+     RETURNING id`,
+    [
+      entries.map((e) => people.get(e.person)),
+      entries.map((e) => e.date),
+      entries.map((e) => e.amount),
+      entries.map((e) => e.kind),
+      entries.map((e) => e.reason ?? ""),
+      entries.map((e) => e.transaction_id),
+    ],
+  );
+  const bookings = new Set(entries.map((e) => e.transaction_id).filter((id) => id !== null));
+  for (const id of bookings) await checkBooking(db, id, bookings.size > 1);
+  return rows.map((r) => r.id);
 }
 
 /**

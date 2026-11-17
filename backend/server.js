@@ -50,7 +50,8 @@ const {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, options: "-c jit=off" });
 const profiles = loadProfiles(path.join(__dirname, "import-profiles"));
 const app = express();
-app.use(express.json());
+// Größer als der Standard (100 KB): Viele Buchungen auf einmal aufzuteilen, ergibt Tausende Einträge (siehe debts.js)
+app.use(express.json({ limit: "2mb" }));
 
 // linked: die Gegenbuchung in einem anderen Konto (siehe paypal.js), sonst null; debts: Schulden zur Buchung (siehe debts.js)
 const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
@@ -710,12 +711,13 @@ app.get("/api/debts", async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
-// Legt Einträge in einem Schritt an, z. B. die Anteile einer geteilten Ausgabe; unbekannte Personen kommen dazu
+// Legt Einträge in einem Schritt an, z. B. die Anteile geteilter Ausgaben; unbekannte Personen kommen dazu. Die
+// bisherigen Einträge der Buchungen in replace fallen dabei weg.
 app.post("/api/debts", async (req, res) => {
-  const { entries, error } = readEntries(req.body);
+  const { entries, replace, error } = readEntries(req.body);
   if (error) return res.status(400).json({ error });
   try {
-    const ids = await inTransaction((client) => createEntries(client, entries));
+    const ids = await inTransaction((client) => createEntries(client, entries, replace));
     const { rows } = await pool.query(`${ENTRIES} WHERE d.id = ANY($1) ORDER BY d.id`, [ids]);
     res.status(201).json(rows);
   } catch (e) {

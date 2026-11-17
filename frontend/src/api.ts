@@ -200,12 +200,15 @@ export const deletePerson = (id: number) => request<null>(`people/${id}`, { meth
 export const fetchDebts = (of: { person: number } | { transaction: number }) =>
   request<Debt[]>(`debts?${new URLSearchParams(Object.entries(of).map(([key, id]) => [key, String(id)]))}`);
 
-/** Legt Einträge in einem Schritt an, z. B. die Anteile einer geteilten Ausgabe; unbekannte Personen kommen dazu */
-export const createDebts = (entries: NewDebt[]) =>
+/**
+ * Legt Einträge in einem Schritt an, z. B. die Anteile geteilter Ausgaben; unbekannte Personen kommen dazu. Die
+ * bisherigen Einträge der Buchungen in replace fallen im selben Schritt weg.
+ */
+export const createDebts = (entries: NewDebt[], replace: number[] = []) =>
   request<Debt[]>("debts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ entries }),
+    body: JSON.stringify({ entries, replace }),
   });
 
 export const updateDebt = (id: number, changes: DebtChanges) =>

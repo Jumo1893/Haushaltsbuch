@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { deleteDebt, fetchDebts } from "../api";
 import { OFFLINE, useData, useLoad } from "../data";
+import { isSplittable } from "../debts";
 import { roundCents } from "../format";
 import type { Debt, Transaction } from "../types";
 import DebtDialog from "./DebtDialog";
@@ -45,25 +46,33 @@ export default function TransactionDebts({ tx }: { tx: Transaction }) {
           <DebtList items={entries} byPerson onEdit={setDialog} onDelete={remove} />
         ) : (
           <p className="hint">
-            {tx.type === "out"
-              ? "Hast du für andere mitbezahlt, teile die Buchung auf. Zahlst du damit Schulden zurück oder leihst Geld aus, verrechne sie mit der Person."
-              : "Zahlt dir damit jemand Schulden zurück oder leiht dir Geld, verrechne die Buchung mit der Person."}
+            {tx.type === "in"
+              ? "Zahlt dir damit jemand Schulden zurück oder leiht dir Geld, verrechne die Buchung mit der Person."
+              : `${isSplittable(tx) ? "Hast du für andere mitbezahlt, teile die Buchung auf. " : ""}Zahlst du damit Schulden zurück oder leihst Geld aus, verrechne sie mit der Person.`}
           </p>
         ))}
       <div className="row-actions">
-        {tx.type === "out" && (
-          <button type="button" className="ghost small" disabled={available <= 0} onClick={() => setDialog("split")}>
-            Aufteilen …
+        {isSplittable(tx) && (
+          // Erst mit den geladenen Einträgen, sonst fehlt im Dialog die Wahl, was mit ihnen passiert
+          <button type="button" className="ghost small" disabled={!data} onClick={() => setDialog("split")}>
+            {entries.length ? "Neu aufteilen …" : "Aufteilen …"}
           </button>
         )}
-        <button type="button" className="ghost small" disabled={available <= 0} onClick={() => setDialog("settle")}>
+        <button type="button" className="ghost small" disabled={!data || available <= 0} onClick={() => setDialog("settle")}>
           Mit Person verrechnen …
         </button>
       </div>
       <small className="hint">
         Wird sofort gespeichert. Kontostände, Einnahmen und Ausgaben ändern sich dadurch nicht.
       </small>
-      {dialog === "split" && <SplitDialog booking={tx} available={available} onSaved={refresh} onClose={close} />}
+      {dialog === "split" && (
+        // Mit den gerade geladenen Einträgen, die Buchung aus der Liste kennt neue noch nicht
+        <SplitDialog
+          bookings={[{ ...tx, debts: entries.map(({ id, personId, person, amount, kind }) => ({ id, personId, person, amount, kind })) }]}
+          onSaved={refresh}
+          onClose={close}
+        />
+      )}
       {dialog === "settle" && (
         <DebtDialog kind="settlement" booking={tx} amount={available} onSaved={refresh} onClose={close} />
       )}

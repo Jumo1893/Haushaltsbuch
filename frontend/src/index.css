@@ -232,6 +232,14 @@ a.entry{text-decoration:none}
 .shares .del{padding:4px 6px;font-size:1.1rem;line-height:1}
 .shares+.ghost{margin-top:6px}
 .split-result li{display:block;padding:2px 0;border:0;font-size:.95rem}
+.picks{margin-top:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.9rem;overflow-wrap:anywhere}
+.chip:hover{border-color:var(--muted)}
+details.split-bookings{margin:0 0 12px}
+.split-bookings summary{font-weight:400}
+.split-bookings ul{max-height:200px;overflow:auto;margin-top:6px;padding-right:6px}
+.split-bookings li{padding:6px 0;font-size:.95rem}
 @media (max-width:480px){.shares li{grid-template-columns:minmax(0,1fr) 60px 72px 24px;gap:6px}.shares.equal li{grid-template-columns:minmax(0,1fr) 72px 24px}}
 @media (max-width:600px){.top nav{order:3;width:100%;gap:0}.top nav a{flex:1;min-width:0;padding:6px 2px;text-align:center}}
 @media (max-width:420px){.top nav a{padding:6px 0;font-size:.8rem}}

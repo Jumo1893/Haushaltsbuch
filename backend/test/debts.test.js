@@ -87,14 +87,24 @@ test("Eintrag ändern: nur übergebene Felder, die Buchung bleibt", () => {
   assert.ok(readEntry({ amount: 0 }, true).error);
 });
 
-test("Mehrere Einträge: 1 bis 50, ein ungültiger verhindert alle", () => {
-  assert.equal(readEntries({ entries: [entry, { ...entry, person: "Ben" }] }).entries.length, 2);
+test("Mehrere Einträge: 1 bis 5000, ein ungültiger verhindert alle", () => {
+  const read = readEntries({ entries: [entry, { ...entry, person: "Ben" }] });
+  assert.equal(read.entries.length, 2);
+  assert.deepEqual(read.replace, [], "ohne replace nichts ersetzen");
+  assert.equal(readEntries({ entries: Array(MAX_ENTRIES).fill(entry) }).entries.length, 5000);
   assert.ok(readEntries({ entries: [] }).error);
   assert.ok(readEntries({}).error);
   assert.ok(readEntries(undefined).error);
   assert.ok(readEntries({ entries: entry }).error);
   assert.ok(readEntries({ entries: Array(MAX_ENTRIES + 1).fill(entry) }).error);
   assert.match(readEntries({ entries: [entry, { ...entry, amount: 0 }] }).error, /Betrag/);
+});
+
+test("Mehrere Einträge: Buchungen zum Ersetzen ohne Doppelte", () => {
+  assert.deepEqual(readEntries({ entries: [entry], replace: [7, 9, 7] }).replace, [7, 9]);
+  for (const replace of [7, ["7"], [0], [1.5], [null], Array(MAX_ENTRIES + 1).fill(1)]) {
+    assert.ok(readEntries({ entries: [entry], replace }).error, JSON.stringify(replace).slice(0, 20));
+  }
 });
 
 test("Abfrage: Einträge einer Person oder einer Buchung", () => {
@@ -120,7 +130,7 @@ test("Buchung: Abbuchung erhöht, was andere dir schulden, Gutschrift senkt es",
 
 test("Buchung prüfen: sperrt sie und wirft bei einem Problem", async () => {
   const answers = (amounts) => [
-    [/^SELECT type, amount FROM transactions/, { rows: [{ type: "out", amount: "40.00" }] }],
+    [/^SELECT type, amount/, { rows: [{ type: "out", amount: "40.00" }] }],
     [/^SELECT amount FROM debts/, { rows: amounts.map((amount) => ({ amount })) }],
   ];
   const db = fakeDb(answers(["10.00", "30.00"]));
@@ -133,6 +143,16 @@ test("Buchung prüfen: sperrt sie und wirft bei einem Problem", async () => {
   assert.equal(gone.queries.length, 1, "ohne Buchung nichts zu prüfen");
 });
 
+test("Buchung prüfen: mit named nennt die Meldung die Buchung", async () => {
+  const db = () =>
+    fakeDb([
+      [/^SELECT type, amount/, { rows: [{ type: "out", amount: "40.00", day: "02.11.2026", label: "Netflix" }] }],
+      [/^SELECT amount FROM debts/, { rows: [{ amount: "50.00" }] }],
+    ]);
+  await assert.rejects(checkBooking(db(), 7, true), (e) => /^Buchung vom 02\.11\.2026 \(Netflix\): Die Einträge/.test(e.message));
+  await assert.rejects(checkBooking(db(), 7), (e) => e.message.startsWith("Die Einträge"));
+});
+
 test("Personen: unbekannte werden angelegt, Groß- und Kleinschreibung zählt nicht", async () => {
   const db = fakeDb([[/^WITH wanted/, { rows: [{ name: "Anna", id: 1 }, { name: "ben", id: 2 }] }]]);
   const ids = await personIds(db, ["Anna", "ben", "Anna"]);
@@ -143,12 +163,11 @@ test("Personen: unbekannte werden angelegt, Groß- und Kleinschreibung zählt ni
   await assert.rejects(personIds(race, ["Anna"]), DebtError);
 });
 
-test("Anlegen: alle Einträge, dann jede Buchung einmal prüfen", async () => {
-  let next = 100;
+test("Anlegen: alle Einträge in einer Abfrage, dann jede Buchung einmal prüfen", async () => {
   const db = fakeDb([
     [/^WITH wanted/, { rows: [{ name: "Anna", id: 1 }, { name: "Ben", id: 2 }] }],
-    [/^INSERT INTO debts/, () => ({ rows: [{ id: next++ }] })],
-    [/^SELECT type, amount FROM transactions/, { rows: [{ type: "out", amount: "40.00" }] }],
+    [/^INSERT INTO debts/, (params) => ({ rows: params[0].map((_, i) => ({ id: 100 + i })) })],
+    [/^SELECT type, amount/, { rows: [{ type: "out", amount: "40.00" }] }],
     [/^SELECT amount FROM debts/, { rows: [{ amount: "10.00" }, { amount: "10.00" }] }],
   ]);
   const entries = readEntries({
@@ -159,11 +178,39 @@ test("Anlegen: alle Einträge, dann jede Buchung einmal prüfen", async () => {
   }).entries;
   assert.deepEqual(await createEntries(db, entries), [100, 101]);
   const inserts = db.queries.filter((q) => q.sql.startsWith("INSERT"));
-  assert.deepEqual(inserts.map((q) => q.params), [
-    [1, "2026-11-02", "10.00", "debt", "Netflix", 7],
-    [2, "2026-11-02", "10.00", "debt", "Netflix", 7],
+  assert.equal(inserts.length, 1);
+  assert.deepEqual(inserts[0].params, [
+    [1, 2],
+    ["2026-11-02", "2026-11-02"],
+    ["10.00", "10.00"],
+    ["debt", "debt"],
+    ["Netflix", "Netflix"],
+    [7, 7],
   ]);
   assert.equal(db.queries.filter((q) => q.sql.includes("FOR UPDATE")).length, 1, "Buchung nur einmal geprüft");
+  assert.equal(db.queries.some((q) => q.sql.startsWith("DELETE")), false, "ohne replace nichts gelöscht");
+});
+
+test("Anlegen mit Ersetzen: erst die bisherigen Einträge der Buchungen löschen, mehrere Buchungen mit Namen prüfen", async () => {
+  const db = fakeDb([
+    [/^DELETE FROM debts/, { rows: [] }],
+    [/^WITH wanted/, { rows: [{ name: "Anna", id: 1 }] }],
+    [/^INSERT INTO debts/, { rows: [{ id: 5 }, { id: 6 }] }],
+    [/^SELECT type, amount/, { rows: [{ type: "out", amount: "40.00", day: "02.12.2026", label: "Netflix" }] }],
+    [/^SELECT amount FROM debts/, { rows: [{ amount: "10.00" }] }],
+  ]);
+  const { entries, replace } = readEntries({
+    entries: [
+      { ...entry, transactionId: 7 },
+      { ...entry, date: "2026-12-02", transactionId: 8 },
+    ],
+    replace: [7, 8, 9],
+  });
+  assert.deepEqual(await createEntries(db, entries, replace), [5, 6]);
+  assert.match(db.queries[0].sql, /^DELETE FROM debts WHERE transaction_id = ANY/);
+  assert.deepEqual(db.queries[0].params, [[7, 8, 9]]);
+  const checks = db.queries.filter((q) => q.sql.includes("FOR UPDATE"));
+  assert.deepEqual(checks.map((q) => q.params), [[7], [8]], "Buchung 9 bekommt nichts Neues, nichts zu prüfen");
 });
 
 test("Anlegen: ohne Buchung keine Prüfung", async () => {
@@ -178,7 +225,7 @@ test("Anlegen: passt es nicht zur Buchung, wirft es", async () => {
   const db = fakeDb([
     [/^WITH wanted/, { rows: [{ name: "Anna", id: 1 }] }],
     [/^INSERT INTO debts/, { rows: [{ id: 5 }] }],
-    [/^SELECT type, amount FROM transactions/, { rows: [{ type: "in", amount: "40.00" }] }],
+    [/^SELECT type, amount/, { rows: [{ type: "in", amount: "40.00" }] }],
     [/^SELECT amount FROM debts/, { rows: [{ amount: "10.00" }] }],
   ]);
   const entries = readEntries({ entries: [{ ...entry, transactionId: 7 }] }).entries;
@@ -189,7 +236,7 @@ test("Ändern: neue Person über ihren Namen, Buchung danach geprüft", async ()
   const db = fakeDb([
     [/^WITH wanted/, { rows: [{ name: "Ben", id: 2 }] }],
     [/^UPDATE debts/, { rows: [{ transaction_id: 7 }] }],
-    [/^SELECT type, amount FROM transactions/, { rows: [{ type: "out", amount: "40.00" }] }],
+    [/^SELECT type, amount/, { rows: [{ type: "out", amount: "40.00" }] }],
     [/^SELECT amount FROM debts/, { rows: [{ amount: "15.00" }] }],
   ]);
   assert.equal(await updateEntry(db, 3, { person: "Ben", amount: "15.00" }), true);

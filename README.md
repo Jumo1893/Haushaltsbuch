@@ -168,6 +168,8 @@ Kästchen auswählen, mit „Alle auswählen“ alle gezeigten.
 - „Bearbeiten“ ändert Kategorie, Rhythmus und Notiz aller ausgewählten Buchungen, auch importierter, und kann sie als
   Umbuchung kennzeichnen oder das aufheben. Was auf „Nicht ändern“ steht, bleibt, wie es ist. Enthält die Auswahl mehrere
   Arten, lässt sich für jede eine Kategorie wählen, weil sie verschiedene Kategorien haben.
+- „Aufteilen“ teilt alle ausgewählten Ausgaben mit denselben Personen und Anteilen auf, z. B. alle Netflix-Abbuchungen
+  auf dich, X, Y und Z (siehe „Schulden“).
 - Eine neue Notiz ersetzt vorhandene Notizen, „Vorhandene Notizen entfernen“ leert sie.
 - Die Änderung lässt sich nicht rückgängig machen.
 
@@ -439,7 +441,19 @@ Einnahme.
 - **Buchung aufteilen:** Eine Abbuchung öffnen (Klick auf die Buchung) und unter „Schulden“ „Aufteilen …“ wählen. Dort
   stehen du und die anderen Beteiligten. Aufgeteilt wird zu gleichen Teilen, nach Prozent oder in Beträgen, du trägst
   den Rest. Jede andere Person schuldet dir dann ihren Anteil, z. B. bei Netflix für 40,00 € zu viert je 10,00 €. Ohne
-  Haken bei „Ich bin selbst beteiligt“ teilen sich nur die anderen den Betrag.
+  Haken bei „Ich bin selbst beteiligt“ teilen sich nur die anderen den Betrag. Ist die Buchung schon aufgeteilt, heißt
+  der Knopf „Neu aufteilen …“. Unter den Beteiligten stehen die bekannten Personen, die zuletzt verwendeten zuerst. Ein
+  Klick trägt sie in die erste leere Zeile ein oder fügt eine Zeile hinzu; wer schon beteiligt ist, fehlt dort.
+- **Mehrere Buchungen aufteilen:** Auf der Seite „Buchungen“ oder eines Kontos die Buchungen auswählen, z. B. nach
+  „netflix“ suchen und „Alle auswählen“, dann unten „Aufteilen“. Jede Buchung wird für sich mit denselben Anteilen
+  aufgeteilt, Prozente und Beträge gelten je Buchung. Ändert sich der Preis, passen sich gleiche Teile und Prozente an,
+  bei Beträgen trägst du den Unterschied. Rechts stehen die Summen über alle Buchungen, darunter je Person, was sie dir
+  daraus schuldet. Einnahmen und Umbuchungen in der Auswahl bleiben, wie sie sind. Grund ist der Text der Buchung, wenn
+  er bei allen gleich ist, sonst ohne Eingabe der jeweils eigene.
+- **Bisherige Einträge:** Hat eine der Buchungen schon Einträge, fragt der Dialog, was mit ihnen passiert:
+  „Ersetzen“ löscht sie (auch einen Ausgleich) und legt die neue Aufteilung an, „Ergänzen“ lässt sie stehen. Beides
+  geschieht in einem Schritt: Passt eine Buchung nicht, z. B. weil die Einträge zusammen über ihrem Betrag lägen, ändert
+  sich nichts, und die Meldung nennt Tag und Text der Buchung.
 - **Ausgabe ohne Buchung aufteilen:** „Ausgabe aufteilen“ auf der Seite „Schulden“, z. B. für bar Bezahltes, mit Betrag
   und Datum von Hand.
 
@@ -938,7 +952,7 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `PATCH`  | `/api/people/:id`                    | Person umbenennen: `{ "name": "…" }`, liefert sie; Name schon vergeben: `409` |
 | `DELETE` | `/api/people/:id`                    | Person mit allen ihren Einträgen löschen, `204` |
 | `GET`    | `/api/debts?person=ID`               | Einträge einer Person, neueste zuerst; mit `transaction=ID` statt `person` die einer Buchung |
-| `POST`   | `/api/debts`                         | Einträge in einem Schritt anlegen, z. B. die Anteile einer aufgeteilten Buchung; liefert sie mit `201` |
+| `POST`   | `/api/debts`                         | Einträge in einem Schritt anlegen, z. B. die Anteile aufgeteilter Buchungen, wahlweise anstelle der bisherigen Einträge von Buchungen; liefert sie mit `201` |
 | `PATCH`  | `/api/debts/:id`                     | Eintrag ändern, nur die übergebenen Felder; liefert ihn |
 | `DELETE` | `/api/debts/:id`                     | Eintrag löschen, `204` |
 | `GET`    | `/api/import-profiles`               | Importprofile und maximale Dateigröße |
@@ -969,13 +983,16 @@ oder `rhythm` angibt, löst die Buchung von ihrer gemerkten Zuordnung, wer `"tra
 Gegenbuchung. Das gilt auch für `PATCH /api/transactions`. Passen Richtung oder Betrag danach nicht mehr zu den
 Schulden der Buchung, antwortet das Backend mit `409` und ändert nichts.
 
-Body für `POST /api/debts`: die Einträge, 1 bis 50, z. B. Netflix zu viert:
+Body für `POST /api/debts`: die Einträge, 1 bis 5000, z. B. Netflix zu viert, anstelle der bisherigen Einträge der
+Buchung 12:
 ```json
 { "entries": [
   { "person": "Anna", "date": "2026-11-02", "amount": 10, "kind": "debt", "reason": "Netflix", "transactionId": 12 },
   { "person": "Ben", "date": "2026-11-02", "amount": 10, "kind": "debt", "reason": "Netflix", "transactionId": 12 }
-] }
+], "replace": [12] }
 ```
+`replace` ist optional: Buchungen, deren bisherige Einträge im selben Schritt wegfallen. Betrifft die Anfrage mehrere
+Buchungen, nennt eine Meldung mit `409` Tag und Text der Buchung, die nicht passt.
 `person` ist der Name, unbekannte Personen werden angelegt. `amount` hat ein Vorzeichen: positiv schuldet die Person dir
 danach mehr bzw. du ihr weniger, negativ umgekehrt. `kind` ist `debt` oder `settlement`, `reason` und `transactionId`
 sind optional. Ein ungültiger Eintrag verhindert alle: `400` mit Grund. Passen die Einträge nicht zur Buchung (Richtung

@@ -31,6 +31,9 @@ export function effectText(person: string, amount: number, kind: DebtKind) {
 export const bookingLabel = (tx: Pick<Transaction, "counterparty" | "note" | "category">) =>
   tx.counterparty || tx.note || tx.category;
 
+/** Aufteilen lassen sich Ausgaben, keine Einnahmen und keine Umbuchungen zwischen eigenen Konten */
+export const isSplittable = (tx: Pick<Transaction, "type" | "transfer">) => tx.type === "out" && !tx.transfer;
+
 /** Markierung einer Buchung mit Schulden in der Liste, z. B. „Schulden · 3 Personen“ oder „Ausgleich · Anna“ */
 export function debtBadge(debts: TransactionDebt[]) {
   const kind = debts.every((d) => d.kind === "settlement") ? "Ausgleich" : "Schulden";

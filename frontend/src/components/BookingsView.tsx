@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   deleteTransaction,
   fetchTransactions,
@@ -19,6 +19,7 @@ import BalanceCard from "./BalanceCard";
 import BulkEditDialog, { type BulkUpdate } from "./BulkEditDialog";
 import CategoryBreakdown from "./CategoryBreakdown";
 import EditTransactionDialog from "./EditTransactionDialog";
+import SplitDialog from "./SplitDialog";
 import TransactionList from "./TransactionList";
 
 interface Props {
@@ -48,11 +49,23 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
   // Bleibt beim Blättern und Suchen bestehen, so lässt sich eine Auswahl über mehrere Monate und Konten zusammenstellen
   const [selected, setSelected] = useState<ReadonlyMap<number, Transaction>>(new Map());
   const [bulkEditing, setBulkEditing] = useState(false);
+  const [splitting, setSplitting] = useState(false);
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
   // Unter einer h2 eine Ebene tiefer, aber gleich groß
   const Heading = nested ? "h3" : "h2";
   const searching = !!filters && isFiltered(filters);
+
+  // Ausgewählte Buchungen auf dem Stand der Liste halten, z. B. nach dem Aufteilen einer davon im Dialog der Buchung
+  useEffect(() => {
+    if (!data) return;
+    setSelected((current) => {
+      if (!data.some((x) => current.has(x.id))) return current;
+      const next = new Map(current);
+      for (const x of data) if (next.has(x.id)) next.set(x.id, x);
+      return next;
+    });
+  }, [data]);
   const outOfView = selected.size - items.filter((x) => selected.has(x.id)).length;
 
   const select = (txs: Transaction[], on: boolean) => {
@@ -154,6 +167,9 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
           <button className="add" onClick={() => setBulkEditing(true)}>
             Bearbeiten
           </button>
+          <button className="ghost" onClick={() => setSplitting(true)}>
+            Aufteilen
+          </button>
           <button className="ghost" onClick={() => setSelected(new Map())}>
             Auswahl aufheben
           </button>
@@ -182,6 +198,18 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
           items={[...selected.values()]}
           onSave={handleBulkUpdate}
           onClose={() => setBulkEditing(false)}
+        />
+      )}
+      {splitting && (
+        // Die Einträge zu Schulden stammen aus der Liste; aufgeteilt wird mit denselben Anteilen je Buchung
+        <SplitDialog
+          bookings={[...selected.values()]}
+          onSaved={(count) => {
+            setSaved(`${bookings(count)} aufgeteilt.`);
+            setSelected(new Map());
+            refresh();
+          }}
+          onClose={() => setSplitting(false)}
         />
       )}
     </>
