@@ -10,8 +10,9 @@ server {
   resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
 
   location /api/ {
-    # CSV-Import: Das Backend erlaubt 5 MB, hier etwas Luft, damit dessen Fehlermeldung ankommt
-    client_max_body_size 6m;
+    # Das Backend begrenzt selbst (CSV-Import 5 MB, Datensicherung zusammen 50 MB); hier etwas Luft, damit seine
+    # Fehlermeldung ankommt
+    client_max_body_size 51m;
     # Über eine Variable löst nginx den Namen bei Bedarf neu auf; der Pfad wird unverändert weitergegeben
     set $backend http://backend:3000;
     proxy_pass $backend;

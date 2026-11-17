@@ -40,6 +40,8 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
   Bankkonto holt, wird mit der Lastschrift dort verbunden und zählt nicht doppelt (siehe „PayPal“)
 - Schulden festhalten, in beide Richtungen: frei eintragen oder eine Ausgabe aufteilen, z. B. ein Abo für vier, und
   frei oder über eine Buchung ausgleichen (siehe „Schulden“)
+- Datensicherung als CSV-Dateien: Buchungen und Konten, Schulden und Einstellungen herunterladen und später oder in
+  einer anderen Instanz genau so wiederherstellen (siehe „Datensicherung“)
 - Helles und dunkles Design (folgt der Systemeinstellung), für Mobilgeräte geeignet
 
 Kategorien gibt es je Art. Zu Beginn sind das die folgenden, unter „Kategorien“ lassen sie sich anlegen, umbenennen und
@@ -204,8 +206,8 @@ Eine Kategorie gehört zur Art der Buchung: „Sonstiges“ gibt es dreimal, Än
 eine Buchung später zur Umbuchung, behält sie ihre Kategorie, auch wenn die Liste der Umbuchungen sie nicht enthält. Hat
 sie die Kategorie von einer gemerkten Zuordnung, geht sie beim nächsten Start des Backends zurück nach „Sonstiges“.
 
-**Import** (`/import`): der CSV-Import (siehe „CSV-Import“) und die letzten 50 Importe mit Datum, Datei, Anzahlen und
-den Konten, in die sie Umsätze übernommen haben.
+**Import** (`/import`): der CSV-Import (siehe „CSV-Import“), die letzten 50 Importe mit Datum, Datei, Anzahlen und
+den Konten, in die sie Umsätze übernommen haben, und darunter die Datensicherung (siehe „Datensicherung“).
 
 **Neue Buchung** öffnet das Formular über der aktuellen Seite. Auf der Seite eines Kontos ist dieses Konto
 vorausgewählt, sonst das Konto der zuletzt erfassten Buchung.
@@ -699,6 +701,71 @@ Beträge dürfen mehr als zwei Nachkommastellen haben, wenn diese 0 sind (z. B. 
 Alle Spalten aus `columns` und `skipRows` müssen in der Kopfzeile der Datei stehen (Groß-/Kleinschreibung
 egal), sonst bricht der Import ab und zeigt die erwarteten und gefundenen Spalten. Weitere Spalten werden ignoriert.
 
+## Datensicherung
+Unten auf der Seite „Import“ lassen sich die Daten als CSV-Dateien sichern und wiederherstellen, z. B. für einen Umzug
+in eine andere Instanz oder als Stand vor größeren Änderungen. Jeder Bereich hat eine eigene Datei:
+
+| Bereich | Datei | Inhalt |
+|---------|-------|--------|
+| Buchungen und Konten | `haushaltsbuch-buchungen-JJJJ-MM-TT.csv` | Konten mit allen Angaben (IBANs, Kontostand laut Bank, Geldkonto eines Depots, täglicher Kursabruf), die bisherigen Importe, Buchungen mit allem, was sie zeigen (Kategorie und ob von Hand gewählt, Rhythmus, Umbuchung, Gegenbuchung, gemerkte Zuordnung, Angaben aus dem Import), Wertpapierbewegungen und abgerufene Kurse |
+| Schulden | `haushaltsbuch-schulden-JJJJ-MM-TT.csv` | Personen und ihre Einträge, mit Buchung und beglichenen Schulden |
+| Einstellungen | `haushaltsbuch-einstellungen-JJJJ-MM-TT.csv` | Kategorien mit dem, was sie automatisch bekommen, und die gemerkten Zuordnungen |
+
+Nicht in der Sicherung stehen die Versuche des täglichen Kursabrufs. Importdateien speichert das Haushaltsbuch ohnehin
+nicht.
+
+**Wiederherstellen:** Eine bis drei Dateien auswählen oder in das Feld ziehen, eine je Bereich. Die Vorschau probiert
+die Wiederherstellung aus, ohne etwas zu speichern, und zeigt je Bereich, wie viele Konten, Buchungen usw. es jetzt sind
+und danach sein werden, dazu alles, was vom Stand der Sicherung abweicht. Erst „Wiederherstellen“ ersetzt die Daten.
+- Jede Datei ersetzt ihren Bereich vollständig, mit den IDs der Sicherung; Bereiche ohne Datei bleiben, wie sie sind. Das
+  lässt sich nicht rückgängig machen. Wer den jetzigen Stand behalten will, lädt ihn vorher herunter.
+- Abgerufene Kurse kommen dazu, vorhandene bleiben: Sie gelten für jedes Depot mit dem Wertpapier.
+- Verbindungen zwischen den Bereichen entstehen über den Inhalt neu, so passen auch Dateien aus verschiedenen Zeiten oder
+  Instanzen zusammen. Ein Eintrag zu Schulden gehört wieder zu seiner Buchung, wenn es eine Buchung mit derselben ID,
+  demselben Tag, derselben Richtung und demselben Betrag gibt, sonst bleibt er ohne Buchung. Eine Buchung folgt wieder
+  der gemerkten Zuordnung, die zu Art, Richtung, Gegenpartei und Betrag passt.
+- Gibt es die Zuordnung einer Buchung danach nicht, kommt es darauf an, was ersetzt wird: Kommen die Buchungen aus der
+  Sicherung, behalten sie Kategorie und Rhythmus. Ersetzt die Sicherung nur die Einstellungen, wirkt eine fehlende
+  Zuordnung wie gelöscht, ihre Buchungen gehen zurück nach „Sonstiges“ (siehe „Gemerkte Zuordnungen“).
+- Kategorien, die Buchungen verwenden, bleiben, auch wenn sie in den Einstellungen der Sicherung fehlen.
+- Danach gleicht das Backend ab wie bei jedem Start: Gegenbuchungen, gemerkte Zuordnungen, automatische Kategorien. Ändert
+  das etwas, nennt es die Vorschau.
+- Am besten alle drei Dateien einer Sicherung zusammen hochladen. Einzeln geht es in dieser Reihenfolge: Einstellungen,
+  Buchungen und Konten, Schulden. Sonst verlieren Buchungen ihre gemerkte Zuordnung und Einträge ihre Buchung; die
+  Vorschau warnt davor.
+- Der tägliche Kursabruf ist danach eingestellt wie in der Sicherung (siehe „Depot“).
+
+**Aufbau der Dateien:** UTF-8 mit BOM, Semikolon als Trennzeichen und Dezimalkomma, so öffnet Excel mit deutschen
+Einstellungen sie direkt. Jede Datei hat einen Abschnitt je Tabelle: eine Zeile mit dem Namen der Tabelle in eckigen
+Klammern, eine Kopfzeile und eine Zeile je Datensatz. Tabellen und Spalten heißen wie in der Datenbank (siehe
+„Datenbank“). Der erste Abschnitt, `[backup]`, nennt den Bereich (`transactions`, `debts` oder `settings`), die Version
+des Formats und den Zeitpunkt der Sicherung:
+```
+[backup]
+format;area;version;created
+haushaltsbuch;debts;1;2026-11-17T19:15:00.000Z
+
+[people]
+id;name;created_at
+1;Anna;2026-10-01T08:00:00.123456Z
+
+[debts]
+id;person_id;date;amount;kind;reason;settled_by;settles_selected;transaction_id;transaction_date;transaction_type;transaction_amount;created_at
+7;1;2026-10-02;10,00;debt;Netflix;;false;12;2026-10-02;out;40,00;2026-10-02T18:00:00.000000Z
+```
+- Tage als `JJJJ-MM-TT`, Zeitpunkte in UTC, Ja und Nein als `true` und `false`, mehrere IBANs durch Leerzeichen getrennt,
+  `details` als JSON. Eine leere Zelle heißt „keine Angabe“ (NULL).
+- Einträge zu Schulden nennen in `transaction_date`, `transaction_type` und `transaction_amount` Tag, Richtung und Betrag
+  ihrer Buchung, daran erkennt die Wiederherstellung sie.
+- Texte, die Excel als Formel lesen würde (am Anfang `=`, `+`, `-` oder `@`), bekommen ein `'` vorangestellt, ebenso Texte,
+  die mit `'` beginnen. Beim Hochladen fällt es wieder weg.
+- Hochladen lässt sich auch, was Excel beim Speichern daraus macht: Tage als `TT.MM.JJJJ`, `WAHR` und `FALSCH`,
+  Dezimalpunkt, Komma oder Tabulator als Trennzeichen, Windows-1252. Die Reihenfolge der Spalten ist egal, weitere Spalten
+  werden übergangen.
+- Passt etwas nicht, z. B. ein ungültiger Betrag oder ein Verweis auf ein Konto, das die Datei nicht enthält, lehnt die
+  Vorschau die Datei mit Zeile und Grund ab und ändert nichts. Eine Sicherung aus einer neueren Version des
+  Haushaltsbuchs (höhere Version des Formats) wird ebenfalls abgelehnt.
+
 ## Frontend entwickeln (mit Hot Reload)
 Datenbank und Backend in Podman laufen lassen, das Frontend lokal mit Vite starten:
 ```
@@ -728,7 +795,8 @@ Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeiche
 Duplikaterkennung, Zuordnung zu Konten), den PayPal-Export (Auslassen, Händler aus der zugehörigen Zeile) und das Verbinden mit
 Gegenbuchungen, die automatischen Kategorien (Händlerarten, Supermärkte, von Hand gewählte
 Kategorien), die gemerkten Zuordnungen (Merken, Löschen, Vorschau), die Schulden (Prüfung der Einträge, Personen über
-den Namen, Grenzen einer Buchung) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
+den Namen, Grenzen einer Buchung), das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
+und die Datensicherung (Aufbau der Dateien, Lesen nach dem Speichern mit Excel, Prüfung von Werten und Verweisen)
 laufen mit dem Test-Runner von Node.js 20+ und brauchen weder Datenbank noch Netz; die Antworten von Lang & Schwarz und
 Kraken sind nachgestellt:
 ```
@@ -755,6 +823,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── debts.js              Schulden: Personen, Einträge, Prüfung gegen die Buchung
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
+│   ├── backup/               Datensicherung: Aufbau der CSV-Dateien, Sichern, Wiederherstellen, API
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
 │   └── Dockerfile
 └── frontend/
@@ -781,7 +850,7 @@ Die Testdateien enthalten nur erfundene Daten.
             │                 EditTransactionDialog, BulkEditDialog, DeleteRuleDialog, AccountCard,
             │                 AccountDialog, AccountSelect, ReconcileDialog, Segmented,
             │                 CategorySelect, CategoryDialog, DeleteCategoryDialog,
-            │                 CsvImport, ImportPreview, ImportHistory,
+            │                 CsvImport, ImportPreview, ImportHistory, BackupPanel,
             │                 AllocationBar, PositionList, ClosedPositions, MovementList,
             │                 DebtDialog, SplitDialog, RepaymentDialog, SettlePicker, DebtList, TransactionDebts,
             │                 PersonDialog, PersonInput
@@ -964,6 +1033,8 @@ Wiederherstellen (ersetzt den aktuellen Inhalt der Datenbank):
 ```
 podman compose exec -T db psql -U budget budget < backup.sql
 ```
+Ohne Kommandozeile geht es über die Datensicherung auf der Seite „Import“ (siehe „Datensicherung“). Ihre CSV-Dateien
+lassen sich auch in einer neueren Version des Haushaltsbuchs wiederherstellen.
 
 ## Stoppen
 - `podman compose down`: Container stoppen, Daten bleiben im Volume `dbdata`
@@ -1010,6 +1081,9 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/imports`                       | Die letzten 50 Importe, neueste zuerst, mit den Konten, in die sie Umsätze übernommen haben |
 | `POST`   | `/api/imports/preview?profile=ID`    | Datei prüfen und Vorschau liefern, speichert nichts |
 | `POST`   | `/api/imports?profile=ID&duplicates=skip&account=ID` | Datei importieren, liefert die Zusammenfassung mit `201`. Mit `duplicates=include` werden auch mögliche Duplikate übernommen. `account` ist das Konto für Umsätze ohne eigene IBAN und nur nötig, wenn die Datei solche enthält |
+| `GET`    | `/api/backup/transactions`           | Sicherung von Buchungen und Konten als CSV-Datei zum Herunterladen (siehe „Datensicherung“); ebenso `/api/backup/debts` und `/api/backup/settings` |
+| `POST`   | `/api/backup/preview`                | Sicherungen prüfen und zeigen, was die Wiederherstellung ändern würde; speichert nichts |
+| `POST`   | `/api/backup/restore`                | Die Bereiche der Sicherungen ersetzen, liefert dieselbe Zusammenfassung wie die Vorschau |
 
 Body für `POST /api/transactions`:
 ```json
@@ -1151,6 +1225,19 @@ Zeilen, die nur ins Depot gehen, in `counts.depot`. Enthält die Datei neue Bewe
 Geldkonto oder das Depot selbst. Die Zusammenfassung nennt unter `depot` das Depot, z. B.
 `{ "id": 4, "name": "Trade Republic Depot", "imported": 120, "created": true }`, ohne neue Bewegungen `null`. Bisherige
 Importe enthalten dazu `depotImported`.
+
+Für Vorschau und Wiederherstellung der Datensicherung ist der Body die Dateien hintereinander
+(`Content-Type: application/octet-stream`, zusammen höchstens 50 MB), der Header `X-Files` nennt URI-kodiert Name und
+Größe jeder Datei, z. B. `[{ "name": "haushaltsbuch-schulden-2026-11-17.csv", "size": 28135 }]`. Die Antwort nennt je
+Bereich die Zahl der Zeilen je Tabelle vorher und nachher, dazu unter `warnings`, was vom Stand der Sicherung abweicht,
+und unter `notes` weitere Hinweise:
+```json
+{ "areas": [{ "area": "debts", "label": "Schulden", "fileName": "haushaltsbuch-schulden-2026-11-17.csv",
+  "created": "2026-11-17T19:15:00.000Z", "tables": [{ "name": "people", "label": "Personen", "before": 3, "after": 5 },
+  { "name": "debts", "label": "Einträge", "before": 12, "after": 40 }] }], "warnings": [], "notes": [] }
+```
+Passt eine Datei nicht, antwortet das Backend mit `400`, `413` (zu groß) oder `415` (keine CSV-Datei) und z. B.
+`{ "error": "haushaltsbuch-schulden-2026-11-17.csv, Zeile 12: amount ist kein gültiger Betrag („12,345“)." }`.
 
 ## Fehlerbehebung
 - **`Cannot connect to Podman` oder ähnliche Verbindungsfehler:** Die Podman-Maschine läuft nicht.

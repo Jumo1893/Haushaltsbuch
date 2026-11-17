@@ -4,6 +4,7 @@ COPY package.json ./
 RUN npm install --omit=dev
 COPY server.js transactions.js accounts.js categories.js autocategories.js rules.js stats.js depot.js quotes.js schedule.js paypal.js debts.js ./
 COPY import ./import
+COPY backup ./backup
 COPY import-profiles ./import-profiles
 USER node
 EXPOSE 3000

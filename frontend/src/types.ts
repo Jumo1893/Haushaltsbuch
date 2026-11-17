@@ -378,6 +378,26 @@ export interface ImportResult {
   depot: { id: number; name: string; imported: number; created: boolean } | null;
 }
 
+/** Bereich einer Datensicherung; jeder Bereich hat eine eigene CSV-Datei */
+export type BackupArea = "transactions" | "debts" | "settings";
+
+/** Was eine Wiederherstellung in einem Bereich ändert: Zeilen je Tabelle vorher und nachher */
+export interface RestoreArea {
+  area: BackupArea;
+  label: string;
+  fileName: string;
+  created: string; // ISO-Zeitstempel der Sicherung
+  tables: { name: string; label: string; before: number; after: number }[];
+}
+
+export interface RestoreSummary {
+  /** Die Bereiche der Dateien, in der Reihenfolge der Wiederherstellung */
+  areas: RestoreArea[];
+  /** Was anders wird als in der Sicherung, z. B. Schulden, deren Buchung es nicht gibt */
+  warnings: string[];
+  notes: string[];
+}
+
 /** Spalten, wenn die Datei nicht zum gewählten Importprofil passt */
 export interface ProfileMismatch {
   expected: string[];

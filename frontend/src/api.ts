@@ -2,6 +2,7 @@ import type {
   Account,
   AccountChanges,
   AutoPrices,
+  BackupArea,
   BulkChanges,
   Category,
   DayBalance,
@@ -21,6 +22,7 @@ import type {
   PriceResult,
   ProfileMismatch,
   RememberMode,
+  RestoreSummary,
   Rule,
   RulePreview,
   Transaction,
@@ -242,3 +244,37 @@ export const runImport = (profile: string, file: File, includeDuplicates: boolea
       (account === null ? "" : `&account=${account}`),
     file,
   );
+
+/** Lädt die Sicherung eines Bereichs als CSV-Datei herunter, mit dem Namen vom Server */
+export async function downloadBackup(area: BackupArea) {
+  const res = await fetch(`/api/backup/${area}`);
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+  const name =
+    /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `haushaltsbuch-${area}.csv`;
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Erst freigeben, wenn der Browser die Datei übernommen hat
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Schickt Dateien hintereinander als Body; Name und Größe jeder Datei stehen im Header X-Files */
+const uploadFiles = <T>(path: string, files: File[]) =>
+  request<T>(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-Files": encodeURIComponent(JSON.stringify(files.map((f) => ({ name: f.name, size: f.size })))),
+    },
+    body: new Blob(files),
+  });
+
+/** Was die Wiederherstellung aus diesen Sicherungen ändern würde; speichert nichts */
+export const previewRestore = (files: File[]) => uploadFiles<RestoreSummary>("backup/preview", files);
+
+/** Ersetzt die Bereiche dieser Sicherungen */
+export const restoreBackup = (files: File[]) => uploadFiles<RestoreSummary>("backup/restore", files);

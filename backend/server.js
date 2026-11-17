@@ -3,6 +3,7 @@ const express = require("express");
 const { Pool } = require("pg");
 const { loadProfiles } = require("./import/profiles");
 const { createImportRouter } = require("./import/routes");
+const { createBackupRouter } = require("./backup/routes");
 const {
   RHYTHMS,
   readTransaction,
@@ -350,6 +351,7 @@ async function init() {
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.use("/api", createImportRouter(pool, profiles));
+app.use("/api", createBackupRouter(pool));
 
 // Buchungen eines Monats (month) oder die neuesten (limit), neueste zuerst
 app.get("/api/transactions", async (req, res) => {
