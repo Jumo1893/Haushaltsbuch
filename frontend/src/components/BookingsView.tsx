@@ -7,6 +7,7 @@ import {
   updateTransactions,
 } from "../api";
 import { OFFLINE, useData, useLoad } from "../data";
+import { isRepayable, isSplittable } from "../debts";
 import { bookings } from "../format";
 import {
   isFiltered,
@@ -19,6 +20,7 @@ import BalanceCard from "./BalanceCard";
 import BulkEditDialog, { type BulkUpdate } from "./BulkEditDialog";
 import CategoryBreakdown from "./CategoryBreakdown";
 import EditTransactionDialog from "./EditTransactionDialog";
+import RepaymentDialog from "./RepaymentDialog";
 import SplitDialog from "./SplitDialog";
 import TransactionList from "./TransactionList";
 
@@ -50,6 +52,7 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
   const [selected, setSelected] = useState<ReadonlyMap<number, Transaction>>(new Map());
   const [bulkEditing, setBulkEditing] = useState(false);
   const [splitting, setSplitting] = useState(false);
+  const [repaying, setRepaying] = useState(false);
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
   // Unter einer h2 eine Ebene tiefer, aber gleich groß
@@ -167,9 +170,17 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
           <button className="add" onClick={() => setBulkEditing(true)}>
             Bearbeiten
           </button>
-          <button className="ghost" onClick={() => setSplitting(true)}>
-            Aufteilen
-          </button>
+          {/* Nur, wenn die Auswahl passende Buchungen enthält: Ausgaben zum Aufteilen, Einnahmen zum Tilgen */}
+          {[...selected.values()].some(isSplittable) && (
+            <button className="ghost" onClick={() => setSplitting(true)}>
+              Aufteilen
+            </button>
+          )}
+          {[...selected.values()].some(isRepayable) && (
+            <button className="ghost" onClick={() => setRepaying(true)}>
+              Als Tilgung
+            </button>
+          )}
           <button className="ghost" onClick={() => setSelected(new Map())}>
             Auswahl aufheben
           </button>
@@ -210,6 +221,17 @@ export default function BookingsView({ month, onMonthChange, accountId, filters,
             refresh();
           }}
           onClose={() => setSplitting(false)}
+        />
+      )}
+      {repaying && (
+        <RepaymentDialog
+          bookings={[...selected.values()]}
+          onSaved={(count) => {
+            setSaved(`${bookings(count)} als Tilgung verrechnet.`);
+            setSelected(new Map());
+            refresh();
+          }}
+          onClose={() => setRepaying(false)}
         />
       )}
     </>

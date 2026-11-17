@@ -1,5 +1,5 @@
 import { eur, roundCents } from "./format";
-import type { DebtKind, Person, Transaction, TransactionDebt } from "./types";
+import type { Debt, DebtKind, Person, Transaction, TransactionDebt } from "./types";
 
 export const KIND_LABELS: Record<DebtKind, string> = { debt: "Schuld", settlement: "Ausgleich" };
 
@@ -33,6 +33,42 @@ export const bookingLabel = (tx: Pick<Transaction, "counterparty" | "note" | "ca
 
 /** Aufteilen lassen sich Ausgaben, keine Einnahmen und keine Umbuchungen zwischen eigenen Konten */
 export const isSplittable = (tx: Pick<Transaction, "type" | "transfer">) => tx.type === "out" && !tx.transfer;
+
+/** Als Tilgung verrechnen lassen sich Einnahmen, keine Ausgaben und keine Umbuchungen zwischen eigenen Konten */
+export const isRepayable = (tx: Pick<Transaction, "type" | "transfer">) => tx.type === "in" && !tx.transfer;
+
+/**
+ * Offene Schuld, die ein Ausgleich mit dem Vorzeichen direction begleichen kann: Zahlt die Person (−1), ihre Schulden
+ * bei dir, zahlst du (1), deine bei ihr. Offen heißt: Kein Ausgleich hat sie als beglichen markiert.
+ */
+export const isOpenDebt = (d: Debt, direction: 1 | -1) =>
+  d.kind === "debt" && Math.sign(d.amount) === -direction && d.settledBy === null;
+
+/**
+ * Verteilt beglichene Schulden auf mehrere Zahlungen, beide in zeitlicher Reihenfolge (Beträge in Cent): Jede Schuld
+ * gehört zu der Zahlung, in deren Summe sie beginnt, die ältesten Schulden also zu den ältesten Zahlungen. Was über alle
+ * Zahlungen hinausgeht, gehört zur letzten. Liefert je Schuld den Index ihrer Zahlung.
+ */
+export function allocate(payments: number[], debts: number[]) {
+  let sum = 0;
+  const ends = payments.map((cents) => (sum += cents));
+  let start = 0;
+  return debts.map((cents) => {
+    const index = ends.findIndex((end) => end > start);
+    start += cents;
+    return index < 0 ? payments.length - 1 : index;
+  });
+}
+
+/**
+ * Person, deren Name als eigenes Wort im Text einer Buchung steht, z. B. „Anna“ in „Anna Muster, Netflix“. Nur bei
+ * genau einer solchen Person, sonst undefined.
+ */
+export function personInText(people: Person[], text: string) {
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const hits = people.filter((p) => new RegExp(`(^|[^\\p{L}\\p{N}])${escape(p.name)}($|[^\\p{L}\\p{N}])`, "iu").test(text));
+  return hits.length === 1 ? hits[0] : undefined;
+}
 
 /** Markierung einer Buchung mit Schulden in der Liste, z. B. „Schulden · 3 Personen“ oder „Ausgleich · Anna“ */
 export function debtBadge(debts: TransactionDebt[]) {

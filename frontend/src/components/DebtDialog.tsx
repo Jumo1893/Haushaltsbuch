@@ -7,6 +7,7 @@ import { dateFormat, eur, parseDate, roundCents, today } from "../format";
 import type { Debt, DebtBooking, DebtKind } from "../types";
 import PersonInput from "./PersonInput";
 import Segmented from "./Segmented";
+import SettlePicker, { type SettleMode } from "./SettlePicker";
 
 const KINDS: [DebtKind, string][] = [
   ["debt", "Schuld"],
@@ -49,6 +50,9 @@ export default function DebtDialog({ entry, kind: initialKind = "debt", person =
     return initial ? String(roundCents(initial)) : "";
   });
   const [reason, setReason] = useState(entry?.reason ?? (booking ? bookingLabel(booking) : ""));
+  // Ein neuer Ausgleich kann bestimmte Schulden begleichen (siehe SettlePicker)
+  const [settleMode, setSettleMode] = useState<SettleMode>("total");
+  const [picked, setPicked] = useState<Debt[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -83,16 +87,24 @@ export default function DebtDialog({ entry, kind: initialKind = "debt", person =
           [1, `Ich zahle ${who} zurück`],
         ];
 
+  // Bestimmte Schulden begleichen lässt sich nur beim Anlegen eines Ausgleichs mit einer bekannten Person
+  const settling = !entry && kind === "settlement" && !!known;
+  const settles = settling && settleMode === "items" ? picked.map((d) => d.id) : [];
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     e.stopPropagation(); // nicht an ein umgebendes Formular weitergeben, siehe AccountDialog
     const personName = cleanName(name);
     if (!valid || !personName) return;
+    if (settling && settleMode === "items" && !settles.length) {
+      setError("Bitte mindestens eine Schuld auswählen.");
+      return;
+    }
     const values = { person: personName, date, amount: (sign * cents) / 100, kind, reason: reason.trim() };
     setSaving(true);
     try {
       if (entry) await updateDebt(entry.id, values);
-      else await createDebts([{ ...values, transactionId: booking?.id ?? null }]);
+      else await createDebts([{ ...values, transactionId: booking?.id ?? null, ...(settles.length ? { settles } : {}) }]);
       onSaved();
       close();
     } catch (err) {
@@ -204,6 +216,18 @@ export default function DebtDialog({ entry, kind: initialKind = "debt", person =
             </button>
             {suggested < open ? " (so viel lässt die Buchung zu)" : " (der ganze offene Betrag)"}
           </small>
+        )}
+        {settling && (
+          <SettlePicker
+            id={id}
+            person={known}
+            direction={sign}
+            paidCents={valid ? cents : 0}
+            mode={settleMode}
+            onModeChange={setSettleMode}
+            picked={picked}
+            onPick={setPicked}
+          />
         )}
         <div className="full">
           <label htmlFor={`${id}-reason`}>Grund</label>

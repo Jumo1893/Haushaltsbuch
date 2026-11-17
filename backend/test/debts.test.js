@@ -249,5 +249,71 @@ test("Ändern: unbekannter Eintrag, ohne Buchung keine Prüfung", async () => {
   assert.equal(await updateEntry(fakeDb([[/^UPDATE debts/, { rows: [] }]]), 3, { reason: "Kino" }), false);
   const free = fakeDb([[/^UPDATE debts/, { rows: [{ transaction_id: null }] }]]);
   assert.equal(await updateEntry(free, 3, { amount: "-5.00" }), true);
-  assert.equal(free.queries.length, 1);
+  assert.equal(free.queries.length, 2, "Ändern und unpassende Verbindungen lösen, keine Buchung prüfen");
+});
+
+test("Ändern: Person, Betrag oder Art lösen Verbindungen zu beglichenen Schulden, die nicht mehr passen", async () => {
+  const answers = [[/^UPDATE debts/, { rows: [{ transaction_id: null }] }]];
+  for (const changes of [{ person_id: 2 }, { amount: "5.00" }, { kind: "debt" }]) {
+    const db = fakeDb(answers);
+    await updateEntry(db, 3, changes);
+    const release = db.queries[1];
+    assert.match(release.sql, /SET settled_by = NULL FROM debts s/, JSON.stringify(changes));
+    assert.match(release.sql, /d\.person_id <> s\.person_id/);
+    assert.match(release.sql, /sign\(d\.amount\) = sign\(s\.amount\)/, "beide in derselben Richtung passen nicht");
+    assert.deepEqual(release.params, [3]);
+  }
+  const reason = fakeDb(answers);
+  await updateEntry(reason, 3, { reason: "Kino", date: "2026-11-03" });
+  assert.equal(reason.queries.length, 1, "Grund und Datum lassen Verbindungen, wie sie sind");
+});
+
+test("Begleichen: nur ein Ausgleich nennt Schulden, in beiden Richtungen, ohne Doppelte", () => {
+  const settlement = { ...entry, amount: -50, kind: "settlement", transactionId: 7 };
+  assert.deepEqual(readEntry({ ...settlement, settles: [4, 5, 4] }).values.settles, [4, 5]);
+  assert.deepEqual(readEntry({ ...settlement, amount: 50, settles: [4] }).values.settles, [4], "du zahlst");
+  assert.equal("settles" in readEntry(settlement).values, false, "ohne settles kein Feld");
+  assert.equal("settles" in readEntry({ ...settlement, settles: [] }).values, false);
+  assert.match(readEntry({ ...entry, settles: [4] }).error, /Ausgleich/, "eine Schuld begleicht nichts");
+  for (const settles of [4, ["4"], [0], [1.5], [null]]) {
+    assert.ok(readEntry({ ...settlement, settles }).error, JSON.stringify(settles));
+  }
+  assert.ok(readEntry({ settles: [4] }, true).error, "nicht nachträglich");
+});
+
+/** Antworten für einen Ausgleich, der Schulden begleicht; updated: wie viele davon offen waren */
+const settleAnswers = (updated) => [
+  [/^WITH wanted/, { rows: [{ name: "Anna", id: 1 }] }],
+  [/^INSERT INTO debts[\s\S]*VALUES/, { rows: [{ id: 9 }] }],
+  [/^UPDATE debts SET settled_by/, { rowCount: updated, rows: [] }],
+  [/^SELECT type, amount/, { rows: [{ type: "in", amount: "50.00" }] }],
+  [/^SELECT amount FROM debts/, { rows: [{ amount: "-50.00" }] }],
+];
+
+test("Begleichen: Ausgleich einzeln anlegen, die offenen Schulden derselben Person zeigen auf ihn", async () => {
+  const db = fakeDb(settleAnswers(2));
+  const { entries } = readEntries({
+    entries: [{ ...entry, amount: -50, kind: "settlement", transactionId: 7, settles: [4, 5] }],
+  });
+  assert.deepEqual(await createEntries(db, entries), [9]);
+  assert.equal(db.queries.some((q) => /unnest\(\$1::int\[\], \$2/.test(q.sql)), false, "keine Sammelabfrage ohne Einträge");
+  const update = db.queries.find((q) => q.sql.startsWith("UPDATE debts SET settled_by"));
+  assert.deepEqual(update.params, [9, [4, 5], 1, 1], "zahlt die Person, ihre Schulden bei dir");
+  assert.match(update.sql, /person_id = \$3 AND kind = 'debt' AND sign\(amount\) = \$4 AND settled_by IS NULL/);
+  assert.equal(db.queries.filter((q) => q.sql.includes("FOR UPDATE")).length, 1, "Buchung geprüft");
+});
+
+test("Begleichen: Zahlst du, sind es deine Schulden bei der Person", async () => {
+  const db = fakeDb(settleAnswers(1));
+  const { entries } = readEntries({ entries: [{ ...entry, amount: 20, kind: "settlement", settles: [6] }] });
+  await createEntries(db, entries);
+  const update = db.queries.find((q) => q.sql.startsWith("UPDATE debts SET settled_by"));
+  assert.deepEqual(update.params, [9, [6], 1, -1]);
+});
+
+test("Begleichen: Ist eine Schuld schon beglichen oder fremd, wirft es", async () => {
+  const { entries } = readEntries({
+    entries: [{ ...entry, amount: -50, kind: "settlement", transactionId: 7, settles: [4, 5] }],
+  });
+  await assert.rejects(createEntries(fakeDb(settleAnswers(1)), entries), (e) => e instanceof DebtError && e.status === 409);
 });

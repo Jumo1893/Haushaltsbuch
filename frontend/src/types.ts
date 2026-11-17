@@ -76,15 +76,19 @@ export interface NewDebt {
   kind: DebtKind;
   reason: string;
   transactionId: number | null; // Buchung, zu der der Eintrag gehört
+  settles?: number[]; // nur bei einem Ausgleich, den die Person zahlt: Schulden (IDs), die er begleicht
 }
 
-/** Geänderte Felder eines Eintrags; die Buchung lässt sich nicht ändern */
-export type DebtChanges = Partial<Omit<NewDebt, "transactionId">>;
+/** Geänderte Felder eines Eintrags; Buchung und beglichene Schulden lassen sich nicht ändern */
+export type DebtChanges = Partial<Omit<NewDebt, "transactionId" | "settles">>;
 
-export interface Debt extends NewDebt {
+export interface Debt extends Omit<NewDebt, "settles"> {
   id: number;
   personId: number;
   transaction: DebtBooking | null;
+  settledBy: number | null; // bei einer beglichenen Schuld: der Ausgleich, der sie begleicht
+  settledDate: string | null; // YYYY-MM-DD dieses Ausgleichs
+  settlesCount: number; // bei einem Ausgleich: wie viele Schulden er begleicht
 }
 
 /** Buchung, zu der ein Eintrag gehört */

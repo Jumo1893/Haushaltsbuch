@@ -236,6 +236,10 @@ const SCHEMA = [
   )`,
   "CREATE INDEX IF NOT EXISTS idx_debts_person ON debts(person_id, date)",
   "CREATE INDEX IF NOT EXISTS idx_debts_transaction ON debts(transaction_id)",
+  // Schuld, die ein bestimmter Ausgleich begleicht, z. B. eine alte Rechnung, die eine Rückzahlung abdeckt. Wird der
+  // Ausgleich gelöscht, ist sie wieder offen.
+  "ALTER TABLE debts ADD COLUMN IF NOT EXISTS settled_by INTEGER REFERENCES debts(id) ON DELETE SET NULL",
+  "CREATE INDEX IF NOT EXISTS idx_debts_settled_by ON debts(settled_by)",
 ];
 
 /** Führt fn mit einer eigenen Verbindung in einer Datenbanktransaktion aus und liefert ihr Ergebnis */

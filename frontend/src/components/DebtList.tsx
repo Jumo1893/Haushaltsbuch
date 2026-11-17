@@ -30,13 +30,19 @@ export default function DebtList({ items, byPerson = false, onEdit, onDelete }: 
                 .filter(Boolean)
                 .join(", ")}`
             : "";
-        const details = [byPerson ? d.reason : day, effectText(d.person, d.amount, d.kind), booking].filter(Boolean);
+        // Beglichene Schulden nennen den Tag des Ausgleichs, ein Ausgleich die Zahl der Schulden, die er begleicht
+        const settled = d.settledDate && `beglichen am ${dateFormat.format(parseDate(d.settledDate))}`;
+        const settles = d.settlesCount > 0 && `begleicht ${d.settlesCount} ${d.settlesCount === 1 ? "Schuld" : "Schulden"}`;
+        const details = [byPerson ? d.reason : day, effectText(d.person, d.amount, d.kind), booking, settled, settles].filter(
+          Boolean,
+        );
         return (
           <li key={d.id}>
             <button className="entry" aria-label={`Eintrag bearbeiten: ${title}, ${day}, ${signed(d.amount)}`} onClick={() => onEdit(d)}>
               <span>
                 {title}
                 {badge && <span className="badge">{KIND_LABELS[d.kind]}</span>}
+                {d.settledBy !== null && <span className="badge">beglichen</span>}
                 <small>{details.join(" · ")}</small>
               </span>
               <span className="amt">{signed(d.amount)}</span>

@@ -236,6 +236,11 @@ a.entry{text-decoration:none}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.9rem;overflow-wrap:anywhere}
 .chip:hover{border-color:var(--muted)}
+.settle-items{max-height:260px;overflow:auto;margin:4px 0 10px;padding-right:6px}
+.settle-items li{display:block;padding:0}
+.settle-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;margin:0;padding:8px 0;color:var(--ink);font-size:.95rem;cursor:pointer}
+.settle-item input{width:18px;height:18px;margin:0;padding:0}
+.settle-sum{margin-bottom:6px}
 details.split-bookings{margin:0 0 12px}
 .split-bookings summary{font-weight:400}
 .split-bookings ul{max-height:200px;overflow:auto;margin-top:6px;padding-right:6px}
