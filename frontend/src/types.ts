@@ -45,6 +45,58 @@ export interface Transaction extends NewTransaction {
   importId: number | null; // gesetzt, wenn die Buchung aus einem CSV-Import stammt
   ruleId: number | null; // gemerkte Zuordnung, der die Buchung folgt
   linked: LinkedTransaction | null; // Gegenbuchung in einem anderen Konto; beide gelten als Umbuchung
+  debts: TransactionDebt[]; // Schulden, die zu der Buchung gehören, z. B. die Anteile einer geteilten Ausgabe
+}
+
+/** Eintrag zu den Schulden einer Person, kurz, wie an einer Buchung */
+export interface TransactionDebt {
+  id: number;
+  personId: number;
+  person: string;
+  amount: number; // positiv: die Person schuldet dir dadurch mehr bzw. du ihr weniger
+  kind: DebtKind;
+}
+
+/** Eine Schuld entsteht, oder eine Schuld wird ausgeglichen. Für den Stand zählen beide gleich. */
+export type DebtKind = "debt" | "settlement";
+
+/** Person, mit der es Schulden gibt */
+export interface Person {
+  id: number;
+  name: string;
+  balance: number; // positiv: schuldet dir, negativ: du schuldest ihr
+  entryCount: number;
+  lastDate: string | null; // YYYY-MM-DD des letzten Eintrags
+}
+
+export interface NewDebt {
+  person: string; // Name; unbekannte Personen legt das Backend an
+  date: string; // YYYY-MM-DD
+  amount: number; // positiv: die Person schuldet dir danach mehr bzw. du ihr weniger, negativ umgekehrt
+  kind: DebtKind;
+  reason: string;
+  transactionId: number | null; // Buchung, zu der der Eintrag gehört
+}
+
+/** Geänderte Felder eines Eintrags; die Buchung lässt sich nicht ändern */
+export type DebtChanges = Partial<Omit<NewDebt, "transactionId">>;
+
+export interface Debt extends NewDebt {
+  id: number;
+  personId: number;
+  transaction: DebtBooking | null;
+}
+
+/** Buchung, zu der ein Eintrag gehört */
+export interface DebtBooking {
+  id: number;
+  accountId: number;
+  type: TxType;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  counterparty: string;
+  category: string;
+  note: string;
 }
 
 /** Gegenbuchung in einem anderen Konto, z. B. die Lastschrift im Girokonto zu einer Bankgutschrift bei PayPal */

@@ -5,6 +5,8 @@ import type {
   BulkChanges,
   Category,
   DayBalance,
+  Debt,
+  DebtChanges,
   Depot,
   ImportOptions,
   ImportPreview,
@@ -13,7 +15,9 @@ import type {
   MonthStat,
   NewAccount,
   NewCategory,
+  NewDebt,
   NewTransaction,
+  Person,
   PriceResult,
   ProfileMismatch,
   RememberMode,
@@ -178,6 +182,40 @@ export const renameCategory = (id: number, name: string) =>
 /** Löscht die Kategorie; ihre Buchungen wandern in die Kategorie moveTo */
 export const deleteCategory = (id: number, moveTo: number) =>
   request<null>(`categories/${id}?moveTo=${moveTo}`, { method: "DELETE" });
+
+/** Personen mit dem Stand ihrer Schulden, nach Name */
+export const fetchPeople = () => request<Person[]>("people");
+
+export const renamePerson = (id: number, name: string) =>
+  request<Person>(`people/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+
+/** Löscht die Person mit allen ihren Einträgen */
+export const deletePerson = (id: number) => request<null>(`people/${id}`, { method: "DELETE" });
+
+/** Einträge einer Person oder einer Buchung, neueste zuerst */
+export const fetchDebts = (of: { person: number } | { transaction: number }) =>
+  request<Debt[]>(`debts?${new URLSearchParams(Object.entries(of).map(([key, id]) => [key, String(id)]))}`);
+
+/** Legt Einträge in einem Schritt an, z. B. die Anteile einer geteilten Ausgabe; unbekannte Personen kommen dazu */
+export const createDebts = (entries: NewDebt[]) =>
+  request<Debt[]>("debts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entries }),
+  });
+
+export const updateDebt = (id: number, changes: DebtChanges) =>
+  request<Debt>(`debts/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+
+export const deleteDebt = (id: number) => request<null>(`debts/${id}`, { method: "DELETE" });
 
 export const fetchImportOptions = () => request<ImportOptions>("import-profiles");
 

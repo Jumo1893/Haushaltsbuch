@@ -38,6 +38,8 @@ Docker funktioniert genauso: In allen Befehlen `podman compose` durch `docker co
   (siehe „CSV-Import“)
 - PayPal-Umsätze aus dem Aktivitätenbericht importieren: Zahlungen stehen mit dem Händler da, und was PayPal vom
   Bankkonto holt, wird mit der Lastschrift dort verbunden und zählt nicht doppelt (siehe „PayPal“)
+- Schulden festhalten, in beide Richtungen: frei eintragen oder eine Ausgabe aufteilen, z. B. ein Abo für vier, und
+  frei oder über eine Buchung ausgleichen (siehe „Schulden“)
 - Helles und dunkles Design (folgt der Systemeinstellung), für Mobilgeräte geeignet
 
 Kategorien gibt es je Art. Zu Beginn sind das die folgenden, unter „Kategorien“ lassen sie sich anlegen, umbenennen und
@@ -125,7 +127,7 @@ erreichbar. Wenn sie nur auf dem eigenen Rechner laufen soll, in `docker-compose
 `"127.0.0.1:8080:80"` statt `"8080:80"` eintragen.
 
 ## Oberfläche
-Oben auf jeder Seite stehen die Navigation (Übersicht, Buchungen, Kategorien, Import) und „Neue Buchung“. Jede Seite hat eine
+Oben auf jeder Seite stehen die Navigation (Übersicht, Buchungen, Schulden, Kategorien, Import) und „Neue Buchung“. Jede Seite hat eine
 eigene Adresse und lässt sich als Lesezeichen speichern, der gewählte Monat steht mit darin
 (z. B. `/buchungen?monat=2026-10`).
 
@@ -168,6 +170,15 @@ Kästchen auswählen, mit „Alle auswählen“ alle gezeigten.
   Arten, lässt sich für jede eine Kategorie wählen, weil sie verschiedene Kategorien haben.
 - Eine neue Notiz ersetzt vorhandene Notizen, „Vorhandene Notizen entfernen“ leert sie.
 - Die Änderung lässt sich nicht rückgängig machen.
+
+**Schulden** (`/schulden`): was dir alle zusammen schulden, was du schuldest, und die Personen mit offenem Stand, wer
+dir etwas schuldet zuerst. Darunter stehen die Personen, mit denen alles ausgeglichen ist. Hier lassen sich eine Schuld
+oder ein Ausgleich frei eintragen und eine Ausgabe ohne Buchung aufteilen (siehe „Schulden“). Ein Klick auf eine Person
+öffnet ihre Seite.
+
+**Person** (`/schulden/ID`): Stand mit der Person und alle Einträge, neueste zuerst. Hier lassen sich Schulden und
+Ausgleich eintragen, beim Ausgleich mit dem offenen Betrag als Vorschlag, Einträge bearbeiten und löschen sowie die
+Person umbenennen oder mit allen Einträgen löschen.
 
 **Kategorien** (`/kategorien`): die Kategorien je Art mit der Zahl ihrer Buchungen. Neue Kategorien lassen sich auch
 direkt in jeder Kategorieauswahl unter „Neue Kategorie anlegen …“ anlegen.
@@ -412,6 +423,52 @@ Kategorie geht dabei zurück nach „Sonstiges“, eine von Hand gewählte bleib
 **Kontostand:** Beginnt der erste importierte Export nicht bei einem Guthaben von 0,00 €, den Kontostand mit der Spalte
 `Guthaben` abgleichen (siehe „Kontostand abgleichen“).
 
+## Schulden
+Unter „Schulden“ steht, wer dir wie viel schuldet und wem du etwas schuldest. Jede Person hat einen Stand: Positiv
+schuldet sie dir etwas, negativ schuldest du ihr etwas, bei 0,00 € ist alles ausgeglichen. Der Stand ist die Summe ihrer
+Einträge. Ein Eintrag hat Person, Datum, Betrag, Grund und Art: **Schuld** (eine Schuld entsteht) oder **Ausgleich**
+(eine Schuld wird beglichen). Für den Stand zählen beide gleich, die Art dient der Übersicht.
+
+Schulden stehen neben den Buchungen. Kontostände, Einnahmen, Ausgaben und Kategorien bleiben, wie sie sind: Teilst du
+ein Abo für 40,00 € auf vier auf, zählt die Buchung weiter mit 40,00 € als Ausgabe, und eine Rückzahlung zählt als
+Einnahme.
+
+**Schulden eintragen**
+- **Frei:** „Schuld eintragen“ auf der Seite „Schulden“ oder einer Person: Person, Richtung („… schuldet mir“ oder „Ich
+  schulde …“), Betrag, Datum und Grund.
+- **Buchung aufteilen:** Eine Abbuchung öffnen (Klick auf die Buchung) und unter „Schulden“ „Aufteilen …“ wählen. Dort
+  stehen du und die anderen Beteiligten. Aufgeteilt wird zu gleichen Teilen, nach Prozent oder in Beträgen, du trägst
+  den Rest. Jede andere Person schuldet dir dann ihren Anteil, z. B. bei Netflix für 40,00 € zu viert je 10,00 €. Ohne
+  Haken bei „Ich bin selbst beteiligt“ teilen sich nur die anderen den Betrag.
+- **Ausgabe ohne Buchung aufteilen:** „Ausgabe aufteilen“ auf der Seite „Schulden“, z. B. für bar Bezahltes, mit Betrag
+  und Datum von Hand.
+
+**Schulden ausgleichen**
+- **Frei:** „Ausgleich eintragen“, z. B. für Bargeld. Ist die Person schon bekannt, schlägt der Dialog den offenen
+  Betrag vor.
+- **Mit einer Buchung:** Die Buchung öffnen und unter „Schulden“ „Mit Person verrechnen …“ wählen, z. B. für die
+  Überweisung, mit der jemand Schulden zurückzahlt. Dort lässt sich auch eine Schuld festhalten, etwa wenn du per
+  Überweisung Geld leihst.
+- **Mit einer Ausgabe, die jemand anderes bezahlt hat:** „Ausgabe aufteilen“ mit „Bezahlt hat: Jemand anderes“. Dann
+  zählt nur dein Anteil, er senkt, was die Person dir schuldet. Beispiel: Xaver schuldet dir 50,00 € und zahlt 30,00 €
+  für eine Pizza für sich, Yara und dich, zu gleichen Teilen. Dein Anteil von 10,00 € gleicht 10,00 € aus, Xaver
+  schuldet dir danach noch 40,00 €. Was Yara Xaver schuldet, zählt hier nicht. Schuldet die Person dir gerade nichts,
+  wird der Eintrag eine Schuld von dir.
+
+Regeln:
+- **Richtung bei Buchungen:** Bei einer Abbuchung geht Geld von dir an andere, sie schulden dir danach mehr oder du ihnen
+  weniger. Bei einer Gutschrift ist es umgekehrt. Die andere Richtung lässt sich nicht wählen.
+- **Höchstens der Betrag der Buchung:** Alle Einträge einer Buchung zusammen übersteigen ihren Betrag nicht. Eine von
+  Hand erfasste Buchung lässt sich deshalb nur ändern, wenn Richtung und Betrag danach noch zu ihren Einträgen passen.
+- **Rundung:** Rundungscents trägt, wer bezahlt hat, z. B. bei 10,00 € zu dritt 3,34 € statt 3,33 €.
+- **Personen** entstehen mit ihrem ersten Eintrag, aus dem Namen. Groß- und Kleinschreibung zählen nicht, „anna“ ist
+  also dieselbe Person wie „Anna“. Umbenennen geht auf der Seite der Person; ein Name kommt nur einmal vor.
+- **Löschen:** Einträge einzeln auf der Seite der Person oder bei der Buchung. Eine Person lässt sich mit allen
+  Einträgen löschen. Wird eine Buchung gelöscht, bleiben ihre Einträge ohne Buchung stehen, denn die Schulden gibt es
+  weiter.
+- **Anzeige:** In den Listen tragen Buchungen mit Einträgen den Zusatz „Schulden“ bzw. „Ausgleich“ mit der Person oder
+  der Zahl der Personen.
+
 ## CSV-Import
 Auf der Seite „Import“ lassen sich Kontoumsätze aus einer CSV-Datei übernehmen. Kommt man über „Umsätze importieren“
 von der Seite eines Kontos, ist dieses Konto für Umsätze ohne eigene IBAN schon gewählt.
@@ -608,7 +665,8 @@ Die Unit-Tests für die Prüfung von Buchungen, Sammeländerungen, Kategorien un
 Bank), die Parameter von Buchungsliste und Suche, den CSV-Import (Parser, Zeichenkodierung, Datums- und Zahlenformate, Profilprüfung,
 Duplikaterkennung, Zuordnung zu Konten), den PayPal-Export (Auslassen, Händler aus der zugehörigen Zeile) und das Verbinden mit
 Gegenbuchungen, die automatischen Kategorien (Händlerarten, Supermärkte, von Hand gewählte
-Kategorien), die gemerkten Zuordnungen (Merken, Löschen, Vorschau) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
+Kategorien), die gemerkten Zuordnungen (Merken, Löschen, Vorschau), die Schulden (Prüfung der Einträge, Personen über
+den Namen, Grenzen einer Buchung) und das Depot (Bestände, Einstand, Gewinne, Kapitalmaßnahmen, Verlauf, Kursabruf, Termine des täglichen Abrufs)
 laufen mit dem Test-Runner von Node.js 20+ und brauchen weder Datenbank noch Netz; die Antworten von Lang & Schwarz und
 Kraken sind nachgestellt:
 ```
@@ -632,6 +690,7 @@ Die Testdateien enthalten nur erfundene Daten.
 │   ├── quotes.js             Aktuelle Kurse von Lang & Schwarz und Kraken abrufen und speichern
 │   ├── schedule.js           Täglicher Kursabruf: Termine, Nachholen, Wiederholen
 │   ├── paypal.js             PayPal: Geld von und zu eigenen Konten mit der Gegenbuchung verbinden
+│   ├── debts.js              Schulden: Personen, Einträge, Prüfung gegen die Buchung
 │   ├── import/               CSV-Import: Parser, Profile, Prüfung, API
 │   ├── import-profiles/      Importprofile (JSON), eins je Format
 │   ├── test/                 Unit-Tests und Beispieldatei mit erfundenen Daten
@@ -648,11 +707,12 @@ Die Testdateien enthalten nur erfundene Daten.
         ├── data.tsx          Konten und Kategorien für alle Seiten, Neuladen nach Änderungen (useLoad)
         ├── api.ts            Typisierte Aufrufe der REST-API
         ├── stats.ts          Summen je Monat, Saldo, größte Ausgaben
+        ├── debts.ts          Schulden: Aufteilen in Anteile, Texte zum Stand
         ├── types.ts          Typen und Kontoarten
         ├── format.ts         Währungs- und Datumsformatierung
         ├── index.css         Styles inkl. Dark Mode und Diagrammfarben
-        ├── pages/            DashboardPage, AccountPage, DepotPage, BookingsPage, CategoriesPage,
-        │                     ImportPage
+        ├── pages/            DashboardPage, AccountPage, DepotPage, BookingsPage, DebtsPage, PersonPage,
+        │                     CategoriesPage, ImportPage
         └── components/       MonthNav, BookingsView, BookingFilters, MonthKpis,
             │                 BalanceCard, CategoryBreakdown, TopPayees,
             │                 TransactionList, TransactionForm, RememberField, NewTransactionDialog,
@@ -660,7 +720,8 @@ Die Testdateien enthalten nur erfundene Daten.
             │                 AccountDialog, AccountSelect, ReconcileDialog, Segmented,
             │                 CategorySelect, CategoryDialog, DeleteCategoryDialog,
             │                 CsvImport, ImportPreview, ImportHistory,
-            │                 AllocationBar, PositionList, ClosedPositions, MovementList
+            │                 AllocationBar, PositionList, ClosedPositions, MovementList,
+            │                 DebtDialog, SplitDialog, DebtList, TransactionDebts, PersonDialog, PersonInput
             └── charts/       LineChart, CashflowChart, Sparkline, ChartTable
                               (eigenes SVG, ohne Diagramm-Bibliothek)
 ```
@@ -805,6 +866,29 @@ Ein Eintrag je Importvorgang.
 | `invalid_count`  | `INTEGER`     | fehlerhafte Zeilen |
 | `created_at`     | `TIMESTAMPTZ` | Zeitpunkt des Imports |
 
+### Tabelle `people`
+Eine Zeile je Person, mit der es Schulden gibt (siehe „Schulden“).
+
+| Spalte       | Typ           | Hinweis |
+|--------------|---------------|---------|
+| `id`         | `SERIAL`      | Primärschlüssel |
+| `name`       | `TEXT`        | max. 40 Zeichen, ohne doppelten Leerraum; ohne Unterschied bei Groß- und Kleinschreibung nur einmal |
+| `created_at` | `TIMESTAMPTZ` | Zeitpunkt der Anlage |
+
+### Tabelle `debts`
+Eine Zeile je Eintrag zu Schulden. Der Stand einer Person ist die Summe ihrer Beträge.
+
+| Spalte           | Typ             | Hinweis |
+|------------------|-----------------|---------|
+| `id`             | `SERIAL`        | Primärschlüssel |
+| `person_id`      | `INTEGER`       | Verweis auf `people.id`. Wird die Person gelöscht, gehen ihre Einträge mit |
+| `date`           | `DATE`          | Tag des Eintrags |
+| `amount`         | `NUMERIC(12,2)` | nie 0. Positiv: die Person schuldet dir danach mehr bzw. du ihr weniger, negativ umgekehrt |
+| `kind`           | `TEXT`          | `debt` (Schuld) oder `settlement` (Ausgleich), nur zur Übersicht |
+| `reason`         | `TEXT`          | Grund, max. 100 Zeichen, optional |
+| `transaction_id` | `INTEGER`       | Verweis auf `transactions.id`: Buchung, zu der der Eintrag gehört, leer: keine. Wird sie gelöscht, wird das Feld leer |
+| `created_at`     | `TIMESTAMPTZ`   | Zeitpunkt der Erfassung |
+
 ### Backup und Wiederherstellen
 Die Daten liegen im Volume `dbdata` (in Podman: `haushaltsbuch_dbdata`, siehe `podman volume ls`). Die Befehle sind für Bash (z. B. Git Bash) oder `cmd`.
 Windows PowerShell 5.1 schreibt mit `>` eine UTF-16-Datei und kennt `<` nicht.
@@ -850,6 +934,13 @@ Alle Endpunkte liegen unter `/api` und sprechen JSON.
 | `GET`    | `/api/rules/preview?transaction=ID&kind=out` | Was eine gemerkte Zuordnung aus der Buchung bewirken würde, wenn sie die Art `kind` hat (optional, ohne Angabe ihre jetzige) |
 | `POST`   | `/api/rules`                         | Kategorie und Rhythmus einer Buchung für ihre Gegenpartei merken, liefert `201` |
 | `DELETE` | `/api/rules/:id`                     | Gemerkte Zuordnung löschen, `204`; ihre Buchungen gehen zurück |
+| `GET`    | `/api/people`                        | Personen mit dem Stand ihrer Schulden, nach Name |
+| `PATCH`  | `/api/people/:id`                    | Person umbenennen: `{ "name": "…" }`, liefert sie; Name schon vergeben: `409` |
+| `DELETE` | `/api/people/:id`                    | Person mit allen ihren Einträgen löschen, `204` |
+| `GET`    | `/api/debts?person=ID`               | Einträge einer Person, neueste zuerst; mit `transaction=ID` statt `person` die einer Buchung |
+| `POST`   | `/api/debts`                         | Einträge in einem Schritt anlegen, z. B. die Anteile einer aufgeteilten Buchung; liefert sie mit `201` |
+| `PATCH`  | `/api/debts/:id`                     | Eintrag ändern, nur die übergebenen Felder; liefert ihn |
+| `DELETE` | `/api/debts/:id`                     | Eintrag löschen, `204` |
 | `GET`    | `/api/import-profiles`               | Importprofile und maximale Dateigröße |
 | `GET`    | `/api/imports`                       | Die letzten 50 Importe, neueste zuerst, mit den Konten, in die sie Umsätze übernommen haben |
 | `POST`   | `/api/imports/preview?profile=ID`    | Datei prüfen und Vorschau liefern, speichert nichts |
@@ -868,12 +959,33 @@ Buchungen enthalten zusätzlich `counterparty`, `purpose` und `importId` (bei Er
 „Umbuchungen“), `ruleId`: die gemerkte Zuordnung, der die Buchung folgt, sonst `null`, und `linked`: die Gegenbuchung
 in einem anderen Konto (siehe „PayPal“), sonst `null`, z. B. `{ "id": 812, "accountId": 1, "type": "out",
 "amount": 24.99, "date": "2026-05-05", "counterparty": "PayPal Europe S.a.r.l. et Cie S.C.A", "purpose": "…" }`.
+Unter `debts` stehen die Einträge zu Schulden, die zur Buchung gehören (siehe „Schulden“), ohne `[]`, z. B.
+`[{ "id": 4, "personId": 2, "person": "Anna", "amount": 10, "kind": "debt" }]`.
 
 Body für `PATCH /api/transactions/:id`: beliebige Felder aus dem Body von `POST`, z. B.
 `{ "category": "Lebensmittel", "note": "Wocheneinkauf" }`. Bei importierten Buchungen sind nur `category`, `note`,
 `rhythm` und `transfer` erlaubt, sonst antwortet das Backend mit `409`. Unbekannte Buchung: `404`. Wer `category`
 oder `rhythm` angibt, löst die Buchung von ihrer gemerkten Zuordnung, wer `"transfer": false` angibt, von ihrer
-Gegenbuchung. Das gilt auch für `PATCH /api/transactions`.
+Gegenbuchung. Das gilt auch für `PATCH /api/transactions`. Passen Richtung oder Betrag danach nicht mehr zu den
+Schulden der Buchung, antwortet das Backend mit `409` und ändert nichts.
+
+Body für `POST /api/debts`: die Einträge, 1 bis 50, z. B. Netflix zu viert:
+```json
+{ "entries": [
+  { "person": "Anna", "date": "2026-11-02", "amount": 10, "kind": "debt", "reason": "Netflix", "transactionId": 12 },
+  { "person": "Ben", "date": "2026-11-02", "amount": 10, "kind": "debt", "reason": "Netflix", "transactionId": 12 }
+] }
+```
+`person` ist der Name, unbekannte Personen werden angelegt. `amount` hat ein Vorzeichen: positiv schuldet die Person dir
+danach mehr bzw. du ihr weniger, negativ umgekehrt. `kind` ist `debt` oder `settlement`, `reason` und `transactionId`
+sind optional. Ein ungültiger Eintrag verhindert alle: `400` mit Grund. Passen die Einträge nicht zur Buchung (Richtung
+oder Summe über ihrem Betrag, siehe „Schulden“): `409`. Einträge enthalten zusätzlich `id`, `personId` und
+`transaction`, die Buchung mit `id`, `accountId`, `type`, `amount`, `date`, `counterparty`, `category` und `note`, ohne
+Buchung `null`. `PATCH /api/debts/:id` nimmt dieselben Felder außer `transactionId`; ein anderer Name ordnet den Eintrag
+einer anderen Person zu.
+
+Personen enthalten `id`, `name`, `balance` (Stand: positiv schuldet sie dir, negativ du ihr), `entryCount` und
+`lastDate` (Tag des letzten Eintrags, ohne Einträge `null`).
 
 Body für `PATCH /api/transactions`: die IDs und die Änderung, z. B.
 `{ "ids": [12, 57, 103], "changes": { "category": "Lebensmittel", "note": "Einkauf beim Supermarkt" } }`. In `changes`

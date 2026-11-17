@@ -30,6 +30,20 @@ const { TRANSFER, KIND, ACCOUNTS, monthlyStats, dailyBalances } = require("./sta
 const { withDepots, withDepotMonths, withDepotDays, depotView, refreshDepot } = require("./depot");
 const { startSchedule, autoPriceState, setAutoPrices } = require("./schedule");
 const { linkTransfers, unlink } = require("./paypal");
+const {
+  DEBT_KINDS,
+  DebtError,
+  personName,
+  readEntry,
+  readEntries,
+  readDebtQuery,
+  checkBooking,
+  createEntries,
+  updateEntry,
+  PEOPLE,
+  ENTRIES,
+  BOOKING_DEBTS,
+} = require("./debts");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
 // als die Abfrage selbst. Der Planer schätzt z. B. die Monatsreihe der Auswertungen viel zu groß.
@@ -38,13 +52,13 @@ const profiles = loadProfiles(path.join(__dirname, "import-profiles"));
 const app = express();
 app.use(express.json());
 
-// linked: die Gegenbuchung in einem anderen Konto (siehe paypal.js), sonst null
+// linked: die Gegenbuchung in einem anderen Konto (siehe paypal.js), sonst null; debts: Schulden zur Buchung (siehe debts.js)
 const SELECT = `SELECT t.id, t.type, t.amount::float8 AS amount, t.category,
   to_char(t.date, 'YYYY-MM-DD') AS date, t.note, t.counterparty, t.purpose, t.import_id AS "importId",
   t.account_id AS "accountId", ${TRANSFER} AS transfer, t.rhythm, t.rule_id AS "ruleId",
   CASE WHEN l.id IS NOT NULL THEN json_build_object('id', l.id, 'accountId', l.account_id, 'type', l.type,
     'amount', l.amount::float8, 'date', to_char(l.date, 'YYYY-MM-DD'), 'counterparty', l.counterparty,
-    'purpose', l.purpose) END AS linked
+    'purpose', l.purpose) END AS linked, ${BOOKING_DEBTS} AS debts
   FROM transactions t LEFT JOIN transactions l ON l.id = t.linked_id`;
 
 // Kategorien mit der Zahl ihrer Buchungen; fixed: lässt sich weder umbenennen noch löschen; auto: was sie automatisch bekommt
@@ -200,6 +214,27 @@ const SCHEMA = [
   // Beide zeigen aufeinander und gelten als Umbuchung; wird eine gelöscht, verliert die andere die Verbindung.
   "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL",
   "CREATE INDEX IF NOT EXISTS idx_tx_linked_id ON transactions(linked_id)",
+  // Schulden (siehe debts.js): Personen, ein Name kommt ohne Unterschied bei Groß- und Kleinschreibung nur einmal vor
+  `CREATE TABLE IF NOT EXISTS people (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL CHECK (name <> ''),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_people_name ON people (lower(name))",
+  // Einträge: positiv schuldet die Person dir danach mehr (oder du ihr weniger), negativ umgekehrt. Optional gehören
+  // sie zu einer Buchung, z. B. einer geteilten Ausgabe; wird sie gelöscht, bleiben sie ohne Buchung.
+  `CREATE TABLE IF NOT EXISTS debts (
+    id SERIAL PRIMARY KEY,
+    person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    amount NUMERIC(12,2) NOT NULL CHECK (amount <> 0),
+    kind TEXT NOT NULL CHECK (kind IN (${DEBT_KINDS.map((k) => `'${k}'`).join(",")})),
+    reason TEXT NOT NULL DEFAULT '',
+    transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_debts_person ON debts(person_id, date)",
+  "CREATE INDEX IF NOT EXISTS idx_debts_transaction ON debts(transaction_id)",
 ];
 
 /** Führt fn mit einer eigenen Verbindung in einer Datenbanktransaktion aus und liefert ihr Ergebnis */
@@ -397,10 +432,13 @@ app.patch("/api/transactions/:id", async (req, res) => {
         `UPDATE transactions SET ${fields.map((f, i) => `${f} = $${i + 2}`).join(", ")} WHERE id = $1`,
         [id, ...fields.map((f) => changes[f])]);
       if (changes.transfer_override === false) await unlinkManually(client, [id]);
+      // Richtung und Betrag müssen zu den Schulden der Buchung passen
+      if (changes.type || changes.amount) await checkBooking(client, id);
     });
     const r = await pool.query(`${SELECT} WHERE t.id = $1`, [id]);
     res.json(r.rows[0]);
   } catch (e) {
+    if (e instanceof DebtError) return res.status(e.status).json({ error: `Die Buchung gehört zu Schulden. ${e.message}` });
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(400).json({ error: "Das gewählte Konto gibt es nicht." });
     console.error(e); res.status(500).json({ error: "Serverfehler" });
   }
@@ -622,6 +660,94 @@ app.delete("/api/rules/:id", async (req, res) => {
       return true;
     });
     if (!found) return res.status(404).json({ error: "Gemerkte Zuordnung nicht gefunden" });
+    res.status(204).end();
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Personen mit dem Stand ihrer Schulden, nach Name
+app.get("/api/people", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`${PEOPLE} GROUP BY p.id ORDER BY lower(p.name), p.id`);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Benennt eine Person um: { "name": "…" }
+app.patch("/api/people/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  const name = personName(req.body?.name);
+  if (!name) return res.status(400).json({ error: "Bitte einen Namen angeben." });
+  try {
+    const { rowCount } = await pool.query("UPDATE people SET name = $2 WHERE id = $1", [id, name]);
+    if (!rowCount) return res.status(404).json({ error: "Person nicht gefunden" });
+    res.json((await pool.query(`${PEOPLE} WHERE p.id = $1 GROUP BY p.id`, [id])).rows[0]);
+  } catch (e) {
+    if (e.code === UNIQUE_VIOLATION) return res.status(409).json({ error: "Es gibt schon eine Person mit diesem Namen." });
+    console.error(e); res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
+// Löscht eine Person mit allen ihren Einträgen
+app.delete("/api/people/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  try {
+    await pool.query("DELETE FROM people WHERE id = $1", [id]);
+    res.status(204).end();
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Einträge einer Person (person=ID) oder einer Buchung (transaction=ID), neueste zuerst
+app.get("/api/debts", async (req, res) => {
+  const { person, transaction, error } = readDebtQuery(req.query);
+  if (error) return res.status(400).json({ error });
+  try {
+    const { rows } = await pool.query(
+      `${ENTRIES} WHERE ($1::int IS NULL OR d.person_id = $1) AND ($2::int IS NULL OR d.transaction_id = $2)
+       ORDER BY d.date DESC, d.id DESC`, [person, transaction]);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
+});
+
+// Legt Einträge in einem Schritt an, z. B. die Anteile einer geteilten Ausgabe; unbekannte Personen kommen dazu
+app.post("/api/debts", async (req, res) => {
+  const { entries, error } = readEntries(req.body);
+  if (error) return res.status(400).json({ error });
+  try {
+    const ids = await inTransaction((client) => createEntries(client, entries));
+    const { rows } = await pool.query(`${ENTRIES} WHERE d.id = ANY($1) ORDER BY d.id`, [ids]);
+    res.status(201).json(rows);
+  } catch (e) {
+    if (e instanceof DebtError) return res.status(e.status).json({ error: e.message });
+    if (e.code === FOREIGN_KEY_VIOLATION) return res.status(400).json({ error: "Die Buchung gibt es nicht (mehr)." });
+    console.error(e); res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
+// Ändert nur die übergebenen Felder eines Eintrags
+app.patch("/api/debts/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  const { values, error } = readEntry(req.body, true);
+  if (error) return res.status(400).json({ error });
+  if (!Object.keys(values).length) return res.status(400).json({ error: "Ungültige Eingabe" });
+  try {
+    if (!(await inTransaction((client) => updateEntry(client, id, values)))) {
+      return res.status(404).json({ error: "Eintrag nicht gefunden" });
+    }
+    res.json((await pool.query(`${ENTRIES} WHERE d.id = $1`, [id])).rows[0]);
+  } catch (e) {
+    if (e instanceof DebtError) return res.status(e.status).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
+app.delete("/api/debts/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Ungültige ID" });
+  try {
+    await pool.query("DELETE FROM debts WHERE id = $1", [id]);
     res.status(204).end();
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });

@@ -1,4 +1,5 @@
-import { dateFormat, dayFormat, eur, parseDate } from "../format";
+import { debtBadge } from "../debts";
+import { dateFormat, dayFormat, eur, parseDate, signed } from "../format";
 import { rhythmLabel, type Account, type Transaction } from "../types";
 
 interface Props {
@@ -89,6 +90,11 @@ export default function TransactionList({
                       <span className="badge">Umbuchung</span>
                     ))}
                   {x.rhythm && <span className="badge">{rhythmLabel(x.rhythm)}</span>}
+                  {x.debts.length > 0 && (
+                    <span className="badge" title={x.debts.map((d) => `${d.person}: ${signed(d.amount)}`).join(", ")}>
+                      {debtBadge(x.debts)}
+                    </span>
+                  )}
                   <small>
                     {day}
                     {account && ` · ${account}`}

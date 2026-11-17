@@ -5,13 +5,16 @@ import AccountPage from "./pages/AccountPage";
 import BookingsPage from "./pages/BookingsPage";
 import CategoriesPage from "./pages/CategoriesPage";
 import DashboardPage from "./pages/DashboardPage";
+import DebtsPage from "./pages/DebtsPage";
 import ImportPage from "./pages/ImportPage";
+import PersonPage from "./pages/PersonPage";
 import { ALL_MONTHS, Link, navigate, useLocation, useTitle } from "./router";
 import type { Transaction } from "./types";
 
 const NAV: [string, string][] = [
   ["/", "Übersicht"],
   ["/buchungen", "Buchungen"],
+  ["/schulden", "Schulden"],
   ["/kategorien", "Kategorien"],
   ["/import", "Import"],
 ];
@@ -38,6 +41,7 @@ function Shell() {
   const mainRef = useRef<HTMLElement>(null);
   const shownPath = useRef(path);
   const accountId = Number(/^\/konten\/(\d+)$/.exec(path)?.[1]) || null;
+  const personId = Number(/^\/schulden\/(\d+)$/.exec(path)?.[1]) || null;
 
   // Nach einem Seitenwechsel beginnt die Tastatur- und Screenreader-Navigation beim neuen Inhalt
   useEffect(() => {
@@ -49,6 +53,8 @@ function Shell() {
   let page: ReactNode;
   if (path === "/") page = <DashboardPage />;
   else if (path === "/buchungen") page = <BookingsPage />;
+  else if (path === "/schulden") page = <DebtsPage />;
+  else if (personId) page = <PersonPage key={personId} id={personId} />;
   else if (path === "/kategorien") page = <CategoriesPage />;
   else if (path === "/import") page = <ImportPage />;
   else if (accountId) page = <AccountPage key={accountId} id={accountId} />;
@@ -73,7 +79,11 @@ function Shell() {
           </Link>
           <nav aria-label="Hauptnavigation">
             {NAV.map(([to, label]) => (
-              <Link key={to} to={to} aria-current={path === to ? "page" : undefined}>
+              <Link
+                key={to}
+                to={to}
+                aria-current={path === to || (to !== "/" && path.startsWith(`${to}/`)) ? "page" : undefined}
+              >
                 {label}
               </Link>
             ))}

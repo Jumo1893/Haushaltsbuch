@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { dateFormat, eur, parseDate } from "../format";
 import type { Account, NewAccount, NewTransaction, RememberMode, Transaction, TransactionChanges } from "../types";
+import TransactionDebts from "./TransactionDebts";
 import TransactionForm from "./TransactionForm";
 
 interface Props {
@@ -110,6 +111,7 @@ export default function EditTransactionDialog({ tx, accounts, onCreateAccount, o
         onSubmit={handleSubmit}
         onCancel={close}
       />
+      <TransactionDebts tx={tx} />
     </dialog>
   );
 }
