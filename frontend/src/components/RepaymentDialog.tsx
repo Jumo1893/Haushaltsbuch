@@ -2,7 +2,18 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { ApiError, createDebts, fetchPeople } from "../api";
 import { useData, useLoad } from "../data";
-import { allocate, balanceText, bookingLabel, cleanName, findPerson, isRepayable, personInText } from "../debts";
+import {
+  allocate,
+  balanceText,
+  bookingLabel,
+  cleanName,
+  findPerson,
+  isRepayable,
+  openAmount,
+  openCents,
+  personInText,
+  usedOf,
+} from "../debts";
 import { bookings as bookingCount, dateFormat, eur, parseDate, roundCents } from "../format";
 import type { Debt, NewDebt, Transaction } from "../types";
 import PersonInput from "./PersonInput";
@@ -83,6 +94,11 @@ export default function RepaymentDialog({ bookings, onSaved, onClose }: Props) {
     : targets.map((booking) => ({ booking, cents: maxOf(booking) })).filter((p) => p.cents > 0);
   const totalCents = payments.reduce((sum, p) => sum + (p.cents > 0 ? p.cents : 0), 0);
   const exhausted = single ? 0 : targets.length - payments.length;
+  // Bei bestimmten Schulden zählt höchstens ihre Summe, die Zahlungen der Reihe nach; der Überschuss bleibt außen vor
+  const settled = [...picked].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  const amounts = payments.map((p) => Math.max(p.cents, 0));
+  const used = mode === "items" ? usedOf(amounts, openCents(settled)) : amounts;
+  const countedCents = used.reduce((sum, c) => sum + c, 0);
   // Ersetzte Einträge derselben Person fallen aus ihrem Stand heraus
   const replacedCents =
     existing === "replace" && person
@@ -119,20 +135,23 @@ export default function RepaymentDialog({ bookings, onSaved, onClose }: Props) {
       setError(problem);
       return;
     }
-    // Ausgewählte Schulden, älteste zuerst, je Zahlung
-    const settled = [...picked].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
-    const owner = mode === "items" ? allocate(payments.map((p) => p.cents), settled.map((d) => cents(d.amount))) : [];
-    const entries = payments.map(({ booking, cents: paid }, k): NewDebt => {
+    // Ausgewählte Schulden, älteste zuerst, je Zahlung; Zahlungen ohne verrechneten Betrag bleiben normale Einnahmen.
+    // Bei bestimmten Schulden begleicht jede verrechnete Zahlung nur diese, auch ohne eigene (siehe settles im Backend).
+    const owner = mode === "items" ? allocate(used, settled.map((d) => Math.round(openAmount(d) * 100))) : [];
+    const entries = payments.flatMap(({ booking }, k): NewDebt[] => {
+      if (used[k] <= 0) return [];
       const settles = settled.filter((_, i) => owner[i] === k).map((d) => d.id);
-      return {
-        person: who,
-        date: booking.date,
-        amount: -paid / 100,
-        kind: "settlement",
-        reason: reason.trim(),
-        transactionId: booking.id,
-        ...(settles.length ? { settles } : {}),
-      };
+      return [
+        {
+          person: who,
+          date: booking.date,
+          amount: -used[k] / 100,
+          kind: "settlement",
+          reason: reason.trim(),
+          transactionId: booking.id,
+          ...(mode === "items" ? { settles } : {}),
+        },
+      ];
     });
     setSaving(true);
     try {
@@ -179,7 +198,7 @@ export default function RepaymentDialog({ bookings, onSaved, onClose }: Props) {
         <details className="split-bookings">
           <summary>
             {targets.length} Einnahmen vom {day(targets[0].date)} bis {day(targets[targets.length - 1].date)}, verrechnet
-            werden {eur.format(totalCents / 100)}
+            werden {eur.format(countedCents / 100)}
           </summary>
           <ul>
             {[...targets].reverse().map((b) => (
@@ -296,7 +315,7 @@ export default function RepaymentDialog({ bookings, onSaved, onClose }: Props) {
         </div>
         {who && totalCents > 0 && !problem.startsWith("Höchstens") && (
           <p className="hint full" role="status">
-            Danach: {balanceText(who, before - (replacedCents + totalCents) / 100)}
+            Danach: {balanceText(who, before - (replacedCents + countedCents) / 100)}
           </p>
         )}
         <div className="full actions">

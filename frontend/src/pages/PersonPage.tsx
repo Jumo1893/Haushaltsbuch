@@ -6,7 +6,7 @@ import PersonDialog from "../components/PersonDialog";
 import Segmented from "../components/Segmented";
 import SplitDialog from "../components/SplitDialog";
 import { OFFLINE, useData, useLoad } from "../data";
-import { isUnsettled } from "../debts";
+import { isUnsettled, openAmount } from "../debts";
 import { eur, money, roundCents } from "../format";
 import { Link, navigate, useLocation, useTitle } from "../router";
 import type { Debt, DebtKind } from "../types";
@@ -51,11 +51,11 @@ export default function PersonPage({ id }: { id: number }) {
   const balance = roundCents(person.balance);
   const close = () => setDialog(null);
   const all = entries.data ?? [];
-  // Offen: Schulden in beide Richtungen, die noch kein Ausgleich als beglichen markiert hat
+  // Offen: Schulden in beide Richtungen, von denen noch etwas nicht getilgt ist, teilweise getilgte mit dem Rest
   const open = all.filter(isUnsettled);
   const shown = view === "open" ? open : all;
-  const theirs = roundCents(open.reduce((sum, d) => sum + Math.max(d.amount, 0), 0));
-  const mine = roundCents(open.reduce((sum, d) => sum + Math.max(-d.amount, 0), 0));
+  const theirs = roundCents(open.filter((d) => d.amount > 0).reduce((sum, d) => sum + openAmount(d), 0));
+  const mine = roundCents(open.filter((d) => d.amount < 0).reduce((sum, d) => sum + openAmount(d), 0));
   // Summe der offenen Schulden je Richtung; weicht sie vom Stand ab, sagt der Text warum
   const sums = [
     theirs > 0 && `${person.name} schuldet dir daraus ${eur.format(theirs)}`,
@@ -64,8 +64,8 @@ export default function PersonPage({ id }: { id: number }) {
   const openText = [
     `${sums.join(", ")}.`,
     roundCents(theirs - mine) !== balance &&
-      "Der Stand weicht davon ab: Ein Ausgleich vom Gesamtbetrag senkt den Stand, ohne einzelne Schulden zu begleichen. " +
-        "Solche Schulden bleiben hier offen, bis ein Ausgleich sie begleicht.",
+      "Der Stand weicht davon ab: Beim Begleichen bestimmter Schulden gelten sie ganz als beglichen, auch wenn mehr " +
+        "oder weniger gezahlt wurde, und was über alle offenen Schulden hinaus gezahlt wurde, tilgt keine Schuld.",
   ]
     .filter(Boolean)
     .join(" ");

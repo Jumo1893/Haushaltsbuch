@@ -43,6 +43,7 @@ const {
   PEOPLE,
   ENTRIES,
   BOOKING_DEBTS,
+  withSettlement,
 } = require("./debts");
 
 // Ohne JIT: Bei den kleinen Abfragen dieser App dauert das Kompilieren länger (bis zu einer Sekunde)
@@ -236,10 +237,16 @@ const SCHEMA = [
   )`,
   "CREATE INDEX IF NOT EXISTS idx_debts_person ON debts(person_id, date)",
   "CREATE INDEX IF NOT EXISTS idx_debts_transaction ON debts(transaction_id)",
-  // Schuld, die ein bestimmter Ausgleich begleicht, z. B. eine alte Rechnung, die eine Rückzahlung abdeckt. Wird der
-  // Ausgleich gelöscht, ist sie wieder offen.
+  // Schuld, die ein bestimmter Ausgleich ausdrücklich begleicht, z. B. eine alte Rechnung, die eine Rückzahlung abdeckt.
+  // Wird der Ausgleich gelöscht, ist sie wieder offen. Was andere Ausgleiche tilgen, ergibt sich aus den Einträgen
+  // (siehe settlementState in debts.js) und wird nicht gespeichert.
   "ALTER TABLE debts ADD COLUMN IF NOT EXISTS settled_by INTEGER REFERENCES debts(id) ON DELETE SET NULL",
   "CREATE INDEX IF NOT EXISTS idx_debts_settled_by ON debts(settled_by)",
+  // Ausgleich, der nur ausgewählte Schulden begleicht („Bestimmte Schulden“) und sonst nichts tilgt, auch wenn ihm keine
+  // Schuld zugeordnet ist. Beim Einführen gilt das für jeden Ausgleich, dem schon Schulden zugeordnet sind.
+  "ALTER TABLE debts ADD COLUMN IF NOT EXISTS settles_selected BOOLEAN NOT NULL DEFAULT false",
+  `UPDATE debts SET settles_selected = true
+   WHERE NOT settles_selected AND id IN (SELECT settled_by FROM debts WHERE settled_by IS NOT NULL)`,
 ];
 
 /** Führt fn mit einer eigenen Verbindung in einer Datenbanktransaktion aus und liefert ihr Ergebnis */
@@ -711,7 +718,7 @@ app.get("/api/debts", async (req, res) => {
     const { rows } = await pool.query(
       `${ENTRIES} WHERE ($1::int IS NULL OR d.person_id = $1) AND ($2::int IS NULL OR d.transaction_id = $2)
        ORDER BY d.date DESC, d.id DESC`, [person, transaction]);
-    res.json(rows);
+    res.json(await withSettlement(pool, rows));
   } catch (e) { console.error(e); res.status(500).json({ error: "Serverfehler" }); }
 });
 
@@ -723,7 +730,7 @@ app.post("/api/debts", async (req, res) => {
   try {
     const ids = await inTransaction((client) => createEntries(client, entries, replace));
     const { rows } = await pool.query(`${ENTRIES} WHERE d.id = ANY($1) ORDER BY d.id`, [ids]);
-    res.status(201).json(rows);
+    res.status(201).json(await withSettlement(pool, rows));
   } catch (e) {
     if (e instanceof DebtError) return res.status(e.status).json({ error: e.message });
     if (e.code === FOREIGN_KEY_VIOLATION) return res.status(400).json({ error: "Die Buchung gibt es nicht (mehr)." });
@@ -742,7 +749,7 @@ app.patch("/api/debts/:id", async (req, res) => {
     if (!(await inTransaction((client) => updateEntry(client, id, values)))) {
       return res.status(404).json({ error: "Eintrag nicht gefunden" });
     }
-    res.json((await pool.query(`${ENTRIES} WHERE d.id = $1`, [id])).rows[0]);
+    res.json((await withSettlement(pool, (await pool.query(`${ENTRIES} WHERE d.id = $1`, [id])).rows))[0]);
   } catch (e) {
     if (e instanceof DebtError) return res.status(e.status).json({ error: e.message });
     console.error(e); res.status(500).json({ error: "Serverfehler" });

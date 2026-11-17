@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { fetchDebts } from "../api";
 import { useLoad } from "../data";
-import { bookingLabel, isOpenDebt } from "../debts";
+import { bookingLabel, isOpenDebt, isPartlyPaid, openAmount } from "../debts";
 import { dateFormat, eur, parseDate } from "../format";
 import type { Debt, Person } from "../types";
 import Segmented from "./Segmented";
@@ -47,7 +47,8 @@ export default function SettlePicker({ id, person, direction, paidCents, mode, o
     .filter((d) => isOpenDebt(d, direction))
     .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
   const pickedIds = new Set(picked.map((d) => d.id));
-  const cents = (d: Debt) => Math.round(Math.abs(d.amount) * 100);
+  // Was von einer Schuld noch offen ist; eine teilweise getilgte zählt nur mit dem Rest
+  const cents = (d: Debt) => Math.round(openAmount(d) * 100);
   const selectedCents = picked.reduce((sum, d) => sum + cents(d), 0);
   const delta = paidCents - selectedCents;
   const paid = paidCents > 0;
@@ -68,6 +69,32 @@ export default function SettlePicker({ id, person, direction, paidCents, mode, o
     onPick(next);
   };
 
+  /**
+   * Was ein Ausgleich vom Gesamtbetrag tilgt: die ältesten offenen Schulden ganz, mit dem Rest die nächste teilweise,
+   * so wie es das Backend aus den Einträgen rechnet
+   */
+  const preview = (() => {
+    if (mode !== "total" || !person || !debts.data || !paid) return "";
+    if (!open.length) return "Gerade ist keine Schuld offen, der Betrag senkt nur den Stand.";
+    let left = paidCents;
+    let full = 0;
+    let part = "";
+    for (const d of open) {
+      if (left <= 0) break;
+      if (left >= cents(d)) {
+        full++;
+        left -= cents(d);
+      } else {
+        part = `${eur.format(left / 100)} von „${d.reason || "Schuld"}“ vom ${day(d.date)}, danach ${eur.format((cents(d) - left) / 100)} offen`;
+        left = 0;
+      }
+    }
+    const whole = full === 1 ? "die älteste offene Schuld ganz" : `die ${full} ältesten offenen Schulden ganz`;
+    const text = [full > 0 && whole, part].filter(Boolean).join(" und ");
+    const rest = left > 0 ? ` ${eur.format(left / 100)} bleiben übrig, ohne Schuld.` : "";
+    return `Tilgt ${text}.${rest}`;
+  })();
+
   return (
     <>
       <div className="full">
@@ -75,9 +102,14 @@ export default function SettlePicker({ id, person, direction, paidCents, mode, o
         <Segmented className="seg" label="Verrechnen" options={MODES} value={mode} onChange={onModeChange} />
         <small className="hint">
           {mode === "total"
-            ? `Der Betrag wird von dem abgezogen, was ${theirs ? "die Person dir" : "du der Person"} insgesamt ${theirs ? "schuldet" : "schuldest"}.`
-            : "Wähle die Schulden, die damit beglichen sind, z. B. alte Rechnungen. Sie gelten danach als beglichen."}
+            ? `Der Betrag tilgt die ältesten offenen Schulden ${theirs ? "der Person bei dir" : "bei der Person"}, was nicht mehr ganz reicht, die nächste teilweise.`
+            : "Wähle die Schulden, die damit beglichen sind, z. B. alte Rechnungen. Sie gelten danach ganz als beglichen."}
         </small>
+        {preview && (
+          <small className="hint" role="status">
+            {preview}
+          </small>
+        )}
       </div>
       {mode === "items" && (
         <div className="full">
@@ -118,9 +150,10 @@ export default function SettlePicker({ id, person, direction, paidCents, mode, o
                         <small>
                           {day(d.date)}
                           {d.transaction && ` · Buchung ${bookingLabel(d.transaction)}, ${eur.format(d.transaction.amount)}`}
+                          {isPartlyPaid(d) && ` · teilweise getilgt, offen von ${eur.format(Math.abs(d.amount))}`}
                         </small>
                       </span>
-                      <span className="amt">{eur.format(Math.abs(d.amount))}</span>
+                      <span className="amt">{eur.format(openAmount(d))}</span>
                     </label>
                   </li>
                 ))}
@@ -147,7 +180,13 @@ export default function SettlePicker({ id, person, direction, paidCents, mode, o
                 </div>
               </dl>
               <small className="hint">
-                Nur zur Information: Der Stand ändert sich um den gezahlten Betrag, nicht um die ausgewählten Schulden.
+                {!paid || !picked.length
+                  ? "Verrechnet wird höchstens, was die ausgewählten Schulden ausmachen."
+                  : delta > 0
+                    ? `Verrechnet werden nur die ${eur.format(selectedCents / 100)} der ausgewählten Schulden. Der Überschuss von ${eur.format(delta / 100)} bleibt außen vor und zählt nicht zu den Schulden.`
+                    : delta < 0
+                      ? `Verrechnet werden die gezahlten ${eur.format(paidCents / 100)}. Die ausgewählten Schulden gelten trotzdem ganz als beglichen, der Fehlbetrag dient nur der Information.`
+                      : "Die Zahlung deckt die ausgewählten Schulden genau."}
               </small>
             </>
           )}

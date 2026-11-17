@@ -86,9 +86,10 @@ export interface Debt extends Omit<NewDebt, "settles"> {
   id: number;
   personId: number;
   transaction: DebtBooking | null;
-  settledBy: number | null; // bei einer beglichenen Schuld: der Ausgleich, der sie begleicht
-  settledDate: string | null; // YYYY-MM-DD dieses Ausgleichs
-  settlesCount: number; // bei einem Ausgleich: wie viele Schulden er begleicht
+  settledBy: number | null; // bei einer Schuld: der Ausgleich, der sie ausdrücklich begleicht („Bestimmte Schulden“)
+  paid: number; // bei einer Schuld: der getilgte Betrag, ohne Vorzeichen; Ausgleiche vom Gesamtbetrag tilgen die ältesten
+  settledDate: string | null; // YYYY-MM-DD, an dem die Schuld ganz getilgt war; sonst null
+  settlesCount: number; // bei einem Ausgleich: wie viele Schulden er ganz oder teilweise tilgt
 }
 
 /** Buchung, zu der ein Eintrag gehört */

@@ -182,9 +182,10 @@ oder ein Ausgleich frei eintragen und eine Ausgabe ohne Buchung aufteilen (siehe
 **Person** (`/schulden/ID`): Stand mit der Person und alle Einträge, neueste zuerst. Hier lassen sich Schulden und
 Ausgleich eintragen, beim Ausgleich mit dem offenen Betrag als Vorschlag, Einträge bearbeiten und löschen sowie die
 Person umbenennen oder mit allen Einträgen löschen. Über der Liste wechselt „Alle“ / „Offene Schulden“ die Ansicht
-(steht in der Adresse, `?ansicht=offen`). „Offene Schulden“ zeigt nur Schulden in beiden Richtungen, die noch kein
-Ausgleich begleicht, mit ihrer Summe je Richtung. Weicht die vom Stand ab, nennt die Seite den Grund: Ein Ausgleich vom
-Gesamtbetrag senkt den Stand, ohne einzelne Schulden zu begleichen.
+(steht in der Adresse, `?ansicht=offen`). „Offene Schulden“ zeigt nur Schulden in beiden Richtungen, von denen noch
+etwas offen ist, teilweise getilgte mit dem offenen Rest, und die Summe je Richtung. Weicht die vom Stand ab, nennt die
+Seite den Grund: Beim Begleichen bestimmter Schulden mit weniger Geld gelten sie trotzdem ganz als beglichen, und was
+vom Gesamtbetrag über alle offenen Schulden hinaus gezahlt wurde, tilgt keine Schuld.
 
 **Kategorien** (`/kategorien`): die Kategorien je Art mit der Zahl ihrer Buchungen. Neue Kategorien lassen sich auch
 direkt in jeder Kategorieauswahl unter „Neue Kategorie anlegen …“ anlegen.
@@ -470,26 +471,43 @@ Einnahme.
   und unter „Schulden“ „Als Tilgung verrechnen …“ wählen. Steht der Name genau einer bekannten Person in der Buchung,
   ist sie vorausgewählt, darunter stehen alle, die dir etwas schulden. Vorgeschlagen ist der ganze Betrag der Buchung,
   weniger geht auch. Zwei Möglichkeiten:
-  - **Vom Gesamtbetrag:** Der Betrag senkt, was die Person dir insgesamt schuldet.
-  - **Bestimmte Schulden:** Zusätzlich gelten ausgewählte Schulden als beglichen, z. B. alte Rechnungen. Die Liste zeigt
-    die offenen Schulden der Person, die ältesten zuerst; „Älteste bis …“ wählt so viele aus, wie in den Betrag passen.
-    Darunter stehen die ausgewählte Summe, der gezahlte Betrag und die Differenz als Überschuss oder Fehlbetrag. Die
-    Differenz dient nur der Information: Der Stand sinkt immer um den gezahlten Betrag. Wer z. B. Schulden über 45,00 €
-    auswählt und 50,00 € bezahlt hat, hat 5,00 € Überschuss; schuldete er dir genau diese 45,00 €, schuldest du ihm
-    danach 5,00 €.
+  - **Vom Gesamtbetrag:** Der Betrag senkt, was die Person dir insgesamt schuldet, und tilgt dabei ihre Schulden von
+    der ältesten an. Was für die nächste Schuld nicht mehr ganz reicht, tilgt sie teilweise. Beispiel: Die Person
+    schuldet dir 99,00 € aus zehn Schulden zu je 9,90 € und zahlt 50,00 €. Dann sind die fünf ältesten Schulden getilgt
+    (49,50 €), von der sechsten die restlichen 0,50 €; offen bleiben eine Schuld über 9,40 € und vier über 9,90 €,
+    zusammen 49,00 €. Der Dialog nennt vor dem Speichern, was getilgt wird.
+  - **Bestimmte Schulden:** Nur die ausgewählten Schulden gelten als beglichen, z. B. alte Rechnungen. Die Liste zeigt
+    die offenen Schulden der Person, die ältesten zuerst, teilweise getilgte mit dem Rest; „Älteste bis …“ wählt so
+    viele aus, wie in den Betrag passen. Darunter stehen die ausgewählte Summe, der gezahlte Betrag und die Differenz.
+    - **Überschuss:** Verrechnet wird nur, was die ausgewählten Schulden ausmachen. Der Rest der Zahlung bleibt eine
+      normale Einnahme und zählt nicht zu den Schulden, z. B. wenn eine Überweisung auch für anderes war. Wer Schulden
+      über 45,00 € auswählt und 50,00 € überwiesen hat, dessen Stand sinkt um 45,00 €; von der Buchung bleiben 5,00 €
+      für anderes übrig.
+    - **Fehlbetrag:** Verrechnet wird der gezahlte Betrag, die ausgewählten Schulden gelten trotzdem ganz als beglichen.
+      Der Fehlbetrag dient nur der Information.
 - **Mehrere Einnahmen als Tilgung:** Auf der Seite „Buchungen“ oder eines Kontos die Einnahmen auswählen, z. B. alle
   Überweisungen einer Person, und unten „Als Tilgung“ wählen. Jede Einnahme wird eine Rückzahlung derselben Person mit
   ihrem ganzen Betrag; Ausgaben und Umbuchungen in der Auswahl bleiben, wie sie sind. Die Person ist vorausgewählt, wenn
-  die Buchungen genau eine bekannte Person nennen. Bei „Bestimmte Schulden“ zählt die Summe aller Zahlungen, und die
-  ältesten ausgewählten Schulden gelten mit den ältesten Zahlungen als beglichen: zahlt jemand erst 20,00 €, dann
-  30,00 €, begleicht die erste Zahlung die ersten 20,00 € der ausgewählten Schulden. Haben Einnahmen schon Einträge, gilt
+  die Buchungen genau eine bekannte Person nennen. Bei „Bestimmte Schulden“ werden die Zahlungen der Reihe nach
+  verrechnet, bis die Summe der ausgewählten Schulden erreicht ist, und die ältesten ausgewählten Schulden gelten mit
+  den ältesten Zahlungen als beglichen: zahlt jemand erst 20,00 €, dann 30,00 €, begleicht die erste Zahlung die ersten
+  20,00 € der ausgewählten Schulden. Was danach übrig ist, bleibt normale Einnahme; Zahlungen, die gar nicht gebraucht
+  werden, bekommen keinen Eintrag. Haben Einnahmen schon Einträge, gilt
   „Ersetzen“ oder „Ergänzen“ wie beim Aufteilen; beim Ersetzen sind Schulden, die die alten Einträge beglichen haben,
   wieder offen, beim Ergänzen zählt nur, was von einer Einnahme noch übrig ist.
-- **Beglichen:** Auf der Seite der Person tragen beglichene Schulden den Zusatz „beglichen“ mit dem Tag des Ausgleichs,
-  der Ausgleich nennt, wie viele Schulden er begleicht. Wird er gelöscht, sind sie wieder offen. Eine Schuld lässt sich
-  nur einmal begleichen, und nur mit einem Ausgleich derselben Person in Gegenrichtung. Ändert sich bei einer Seite
-  Person, Betrag oder Art so, dass es nicht mehr passt, löst sich die Verbindung. Welche Schulden ein Ausgleich
-  begleicht, lässt sich nachträglich nicht ändern: dafür den Ausgleich löschen und neu eintragen.
+- **Beglichen:** Auf der Seite der Person tragen beglichene Schulden den Zusatz „beglichen“ mit dem Tag, an dem sie ganz
+  getilgt waren, teilweise getilgte den Zusatz „teilweise getilgt“ mit dem offenen Rest. Ein Ausgleich nennt, wie viele
+  Schulden er ganz oder teilweise tilgt. Wird er gelöscht, sind sie wieder offen.
+- **Rechnung:** Was ein Ausgleich vom Gesamtbetrag tilgt, wird nicht gespeichert, sondern aus den Einträgen der Person
+  berechnet: Die Ausgleiche kommen in zeitlicher Reihenfolge dran, jeder tilgt die ältesten offenen Schulden in
+  Gegenrichtung. Schulden, die ein Ausgleich ausdrücklich begleicht („Bestimmte Schulden“), zählen dabei als ganz
+  getilgt, und dieser Ausgleich tilgt nichts weiter. Wird ein Ausgleich gelöscht oder geändert oder kommt eine ältere
+  Schuld dazu, ändert sich die Rechnung entsprechend. Das gilt auch für Ausgleiche, die vor dieser Version eingetragen
+  wurden.
+- **Ausdrücklich begleichen:** Eine Schuld lässt sich nur einmal ausdrücklich begleichen, und nur mit einem Ausgleich
+  derselben Person in Gegenrichtung. Ändert sich bei einer Seite Person, Betrag oder Art so, dass es nicht mehr passt,
+  löst sich die Verbindung. Welche Schulden ein Ausgleich begleicht, lässt sich nachträglich nicht ändern: dafür den
+  Ausgleich löschen und neu eintragen.
 - **Mit einer Buchung allgemein:** Die Buchung öffnen und unter „Schulden“ „Mit Person verrechnen …“ wählen. Dort
   lassen sich ein Ausgleich oder eine Schuld festhalten, etwa wenn du per Überweisung Geld leihst oder dir jemand Geld
   leiht.
@@ -932,7 +950,8 @@ Eine Zeile je Eintrag zu Schulden. Der Stand einer Person ist die Summe ihrer Be
 | `kind`           | `TEXT`          | `debt` (Schuld) oder `settlement` (Ausgleich), nur zur Übersicht |
 | `reason`         | `TEXT`          | Grund, max. 100 Zeichen, optional |
 | `transaction_id` | `INTEGER`       | Verweis auf `transactions.id`: Buchung, zu der der Eintrag gehört, leer: keine. Wird sie gelöscht, wird das Feld leer |
-| `settled_by`     | `INTEGER`       | Verweis auf `debts.id`: bei einer beglichenen Schuld der Ausgleich, der sie begleicht, leer: offen. Wird er gelöscht, ist sie wieder offen |
+| `settled_by`     | `INTEGER`       | Verweis auf `debts.id`: bei einer ausdrücklich beglichenen Schuld der Ausgleich, der sie begleicht, sonst leer. Wird er gelöscht, ist sie wieder offen. Was Ausgleiche vom Gesamtbetrag tilgen, steht nicht hier, es wird berechnet |
+| `settles_selected` | `BOOLEAN`     | bei einem Ausgleich: begleicht nur ausdrücklich ausgewählte Schulden („Bestimmte Schulden“) und tilgt keine weiteren von unten |
 | `created_at`     | `TIMESTAMPTZ`   | Zeitpunkt der Erfassung |
 
 ### Backup und Wiederherstellen
@@ -1035,10 +1054,13 @@ ordnet den Eintrag einer anderen Person zu.
 
 Ein Ausgleich (`kind` `settlement`) kann mit `"settles": [4, 5]` bestimmte offene Schulden derselben Person als
 beglichen markieren (siehe „Schulden“): bei negativem Betrag (die Person zahlt) ihre Schulden bei dir (positive
-Beträge), bei positivem deine bei ihr (negative). Ist eine davon schon beglichen, gelöscht, von einer anderen Person
-oder in derselben Richtung: `409`, und nichts wird gespeichert. Einträge enthalten dazu `settledBy` (der Ausgleich,
-der die Schuld begleicht, sonst `null`), `settledDate` (sein Tag) und `settlesCount` (wie viele Schulden ein Ausgleich
-begleicht).
+Beträge), bei positivem deine bei ihr (negative). Mit `settles` (auch `[]`) begleicht der Ausgleich nur diese Schulden
+und tilgt keine weiteren von unten (Spalte `settles_selected`); ohne `settles` tilgt er vom Gesamtbetrag. Ist eine der
+Schulden schon beglichen, gelöscht, von einer anderen Person oder in derselben Richtung: `409`, und nichts wird
+gespeichert. Einträge enthalten dazu `settledBy` (der Ausgleich,
+der die Schuld ausdrücklich begleicht, sonst `null`), `paid` (bei einer Schuld der getilgte Betrag ohne Vorzeichen, auch
+aus Ausgleichen vom Gesamtbetrag), `settledDate` (Tag, an dem sie ganz getilgt war, sonst `null`) und `settlesCount`
+(wie viele Schulden ein Ausgleich ganz oder teilweise tilgt), siehe „Rechnung“ unter „Schulden“.
 
 Personen enthalten `id`, `name`, `balance` (Stand: positiv schuldet sie dir, negativ du ihr), `entryCount` und
 `lastDate` (Tag des letzten Eintrags, ohne Einträge `null`).

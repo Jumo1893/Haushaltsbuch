@@ -39,13 +39,36 @@ export const isRepayable = (tx: Pick<Transaction, "type" | "transfer">) => tx.ty
 
 /**
  * Offene Schuld, die ein Ausgleich mit dem Vorzeichen direction begleichen kann: Zahlt die Person (−1), ihre Schulden
- * bei dir, zahlst du (1), deine bei ihr. Offen heißt: Kein Ausgleich hat sie als beglichen markiert.
+ * bei dir, zahlst du (1), deine bei ihr. Offen heißt: Von ihr ist noch etwas nicht getilgt.
  */
 export const isOpenDebt = (d: Debt, direction: 1 | -1) =>
-  d.kind === "debt" && Math.sign(d.amount) === -direction && d.settledBy === null;
+  d.kind === "debt" && Math.sign(d.amount) === -direction && openAmount(d) > 0;
 
-/** Offene Schuld in einer der beiden Richtungen: Kein Ausgleich hat sie als beglichen markiert */
-export const isUnsettled = (d: Debt) => d.kind === "debt" && d.settledBy === null;
+/** Was von einer Schuld noch offen ist, ohne Vorzeichen; Ausgleiche vom Gesamtbetrag tilgen die ältesten zuerst */
+export const openAmount = (d: Debt) => (d.kind === "debt" ? roundCents(Math.abs(d.amount) - d.paid) : 0);
+
+/** Offene Schuld in einer der beiden Richtungen, ganz oder teilweise */
+export const isUnsettled = (d: Debt) => openAmount(d) > 0;
+
+/** Was ausgewählte Schulden zusammen noch ausmachen, in Cent; teilweise getilgte zählen mit dem Rest */
+export const openCents = (debts: Debt[]) => debts.reduce((sum, d) => sum + Math.round(openAmount(d) * 100), 0);
+
+/**
+ * Wie viel von jeder Zahlung (in Cent, zeitliche Reihenfolge) verrechnet wird, wenn nur ausgewählte Schulden über
+ * zusammen selected Cent beglichen werden: die Zahlungen der Reihe nach, bis die Summe erreicht ist. Der Überschuss
+ * bleibt unverrechnet, spätere Zahlungen dann ganz.
+ */
+export const usedOf = (payments: number[], selected: number) => {
+  let left = selected;
+  return payments.map((cents) => {
+    const used = Math.min(cents, Math.max(left, 0));
+    left -= used;
+    return used;
+  });
+};
+
+/** Teilweise getilgte Schuld: Ein Teil ist bezahlt, ein Teil offen */
+export const isPartlyPaid = (d: Debt) => d.kind === "debt" && d.paid > 0 && openAmount(d) > 0;
 
 /**
  * Verteilt beglichene Schulden auf mehrere Zahlungen, beide in zeitlicher Reihenfolge (Beträge in Cent): Jede Schuld

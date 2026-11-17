@@ -12,6 +12,7 @@ const {
   personIds,
   createEntries,
   updateEntry,
+  settlementState,
 } = require("../debts");
 
 /**
@@ -272,9 +273,11 @@ test("Begleichen: nur ein Ausgleich nennt Schulden, in beiden Richtungen, ohne D
   const settlement = { ...entry, amount: -50, kind: "settlement", transactionId: 7 };
   assert.deepEqual(readEntry({ ...settlement, settles: [4, 5, 4] }).values.settles, [4, 5]);
   assert.deepEqual(readEntry({ ...settlement, amount: 50, settles: [4] }).values.settles, [4], "du zahlst");
-  assert.equal("settles" in readEntry(settlement).values, false, "ohne settles kein Feld");
-  assert.equal("settles" in readEntry({ ...settlement, settles: [] }).values, false);
+  assert.equal("settles" in readEntry(settlement).values, false, "ohne settles kein Feld: vom Gesamtbetrag");
+  assert.equal("settles" in readEntry({ ...settlement, settles: null }).values, false);
+  assert.deepEqual(readEntry({ ...settlement, settles: [] }).values.settles, [], "leer: nur Ausgewähltes, hier nichts");
   assert.match(readEntry({ ...entry, settles: [4] }).error, /Ausgleich/, "eine Schuld begleicht nichts");
+  assert.match(readEntry({ ...entry, settles: [] }).error, /Ausgleich/);
   for (const settles of [4, ["4"], [0], [1.5], [null]]) {
     assert.ok(readEntry({ ...settlement, settles }).error, JSON.stringify(settles));
   }
@@ -301,6 +304,27 @@ test("Begleichen: Ausgleich einzeln anlegen, die offenen Schulden derselben Pers
   assert.deepEqual(update.params, [9, [4, 5], 1, 1], "zahlt die Person, ihre Schulden bei dir");
   assert.match(update.sql, /person_id = \$3 AND kind = 'debt' AND sign\(amount\) = \$4 AND settled_by IS NULL/);
   assert.equal(db.queries.filter((q) => q.sql.includes("FOR UPDATE")).length, 1, "Buchung geprüft");
+  const insert = db.queries.find((q) => q.sql.startsWith("INSERT INTO debts"));
+  assert.match(insert.sql, /settles_selected\)\s+VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, true\)/, "gekennzeichnet");
+});
+
+test("Begleichen: ohne zugeordnete Schulden gekennzeichnet, aber nichts zu markieren", async () => {
+  const db = fakeDb(settleAnswers(0));
+  const { entries } = readEntries({ entries: [{ ...entry, amount: -5, kind: "settlement", settles: [] }] });
+  assert.deepEqual(await createEntries(db, entries), [9]);
+  assert.match(db.queries.find((q) => q.sql.startsWith("INSERT")).sql, /settles_selected/);
+  assert.equal(db.queries.some((q) => q.sql.startsWith("UPDATE debts SET settled_by")), false);
+});
+
+test("Tilgen: Ein Ausgleich nur für ausgewählte Schulden tilgt nichts von unten, auch ohne zugeordnete Schuld", () => {
+  const entries = ledger([
+    [1, "01-01", 10],
+    [2, "02-01", 10],
+    [3, "03-01", -5, "settlement"],
+  ]).map((e) => (e.id === 3 ? { ...e, settlesSelected: true } : e));
+  const state = settlementState(entries);
+  assert.deepEqual([1, 2].map((id) => state.get(id).paid), [0, 0]);
+  assert.equal(state.get(3).covers, 0);
 });
 
 test("Begleichen: Zahlst du, sind es deine Schulden bei der Person", async () => {
@@ -316,4 +340,77 @@ test("Begleichen: Ist eine Schuld schon beglichen oder fremd, wirft es", async (
     entries: [{ ...entry, amount: -50, kind: "settlement", transactionId: 7, settles: [4, 5] }],
   });
   await assert.rejects(createEntries(fakeDb(settleAnswers(1)), entries), (e) => e instanceof DebtError && e.status === 409);
+});
+
+/** Einträge einer Person für settlementState; id, Tag (Monat-Tag in 2026), Betrag, Art, ausdrücklich beglichen von */
+const ledger = (rows) =>
+  rows.map(([id, day, amount, kind = "debt", settledBy = null, personId = 1]) => ({
+    id,
+    personId,
+    date: `2026-${day}`,
+    amount,
+    kind,
+    settledBy,
+  }));
+
+test("Tilgen vom Gesamtbetrag: älteste Schulden zuerst, der Rest tilgt die nächste teilweise", () => {
+  const debts = Array.from({ length: 10 }, (_, i) => [i + 1, `01-${String(i + 1).padStart(2, "0")}`, 9.9]);
+  const state = settlementState(ledger([...debts, [11, "02-01", -50, "settlement"]]));
+  const paid = (id) => state.get(id).paid;
+  assert.deepEqual([1, 2, 3, 4, 5].map(paid), [990, 990, 990, 990, 990], "die ersten fünf ganz");
+  assert.equal(paid(6), 50, "die sechste mit 0,50 €");
+  assert.deepEqual([7, 8, 9, 10].map(paid), [0, 0, 0, 0]);
+  assert.equal(state.get(5).settledDate, "2026-02-01");
+  assert.equal(state.get(6).settledDate, null, "teilweise ist nicht getilgt");
+  assert.equal(state.get(11).covers, 6);
+  const open = debts.reduce((sum, [id]) => sum + 990 - paid(id), 0);
+  assert.equal(open, 4900, "49,00 € offen, wie der Stand");
+});
+
+test("Tilgen vom Gesamtbetrag: mehrere Zahlungen nacheinander, jede schließt an die vorige an", () => {
+  const state = settlementState(
+    ledger([
+      [1, "01-01", 10],
+      [2, "02-01", 10],
+      [3, "03-01", 10],
+      [4, "04-01", -15, "settlement"],
+      [5, "05-01", -10, "settlement"],
+    ]),
+  );
+  assert.deepEqual([1, 2, 3].map((id) => state.get(id).paid), [1000, 1000, 500]);
+  assert.equal(state.get(2).settledDate, "2026-05-01", "die zweite Zahlung macht sie voll");
+  assert.equal(state.get(4).covers, 2);
+  assert.equal(state.get(5).covers, 2);
+});
+
+test("Tilgen: ausdrücklich beglichene Schulden zählen ganz, ihr Ausgleich tilgt nichts weiter", () => {
+  const state = settlementState(
+    ledger([
+      [1, "01-01", 10],
+      [2, "02-01", 10, "debt", 4],
+      [3, "03-01", 10],
+      [4, "04-01", -50, "settlement"],
+      [5, "05-01", -5, "settlement"],
+    ]),
+  );
+  assert.equal(state.get(2).paid, 1000);
+  assert.equal(state.get(2).settledDate, "2026-04-01");
+  assert.equal(state.get(4).covers, 1, "nur die ausgewählte, der Überschuss bleibt Information");
+  assert.deepEqual([1, 3].map((id) => state.get(id).paid), [500, 0], "der andere Ausgleich tilgt die älteste offene");
+});
+
+test("Tilgen: je Richtung und Person getrennt, Überschuss bleibt ohne Schuld", () => {
+  const state = settlementState(
+    ledger([
+      [1, "01-01", 10],
+      [2, "01-02", -20],
+      [3, "02-01", 30, "settlement"],
+      [4, "02-02", -30, "settlement"],
+      [5, "01-01", 10, "debt", null, 2],
+    ]),
+  );
+  assert.equal(state.get(1).paid, 1000, "Zahlung der Person tilgt ihre Schuld");
+  assert.equal(state.get(2).paid, 2000, "deine Zahlung tilgt deine Schuld, 10 € bleiben übrig");
+  assert.equal(state.get(5).paid, 0, "andere Person");
+  assert.equal(state.get(3).covers, 1);
 });

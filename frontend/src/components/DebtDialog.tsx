@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { ApiError, createDebts, fetchPeople, updateDebt } from "../api";
 import { useData, useLoad } from "../data";
-import { balanceText, bookingLabel, cleanName, findPerson } from "../debts";
+import { balanceText, bookingLabel, cleanName, findPerson, openCents } from "../debts";
 import { dateFormat, eur, parseDate, roundCents, today } from "../format";
 import type { Debt, DebtBooking, DebtKind } from "../types";
 import PersonInput from "./PersonInput";
@@ -71,7 +71,12 @@ export default function DebtDialog({ entry, kind: initialKind = "debt", person =
   const sign: Sign = chosenSign ?? (kind === "settlement" && before >= 0 ? -1 : 1);
   const cents = Math.round(parseFloat(amountText) * 100);
   const valid = cents > 0;
-  const after = before + (valid ? (sign * cents) / 100 : 0);
+  // Bestimmte Schulden begleichen lässt sich nur beim Anlegen eines Ausgleichs mit einer bekannten Person. Verrechnet
+  // wird dann höchstens, was die ausgewählten Schulden ausmachen; ein Überschuss bleibt außen vor.
+  const settling = !entry && kind === "settlement" && !!known;
+  const selectedOnly = settling && settleMode === "items";
+  const counted = selectedOnly ? Math.min(cents, openCents(picked)) : cents;
+  const after = before + (valid ? (sign * counted) / 100 : 0);
   const open = roundCents(Math.abs(before));
   // Den offenen Betrag vorschlagen, wenn der Ausgleich in seine Richtung geht, höchstens so viel wie die Buchung zulässt
   const suggested = kind === "settlement" && open > 0 && sign === -Math.sign(before) ? Math.min(open, amount ?? open) : 0;
@@ -87,24 +92,23 @@ export default function DebtDialog({ entry, kind: initialKind = "debt", person =
           [1, `Ich zahle ${who} zurück`],
         ];
 
-  // Bestimmte Schulden begleichen lässt sich nur beim Anlegen eines Ausgleichs mit einer bekannten Person
-  const settling = !entry && kind === "settlement" && !!known;
-  const settles = settling && settleMode === "items" ? picked.map((d) => d.id) : [];
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     e.stopPropagation(); // nicht an ein umgebendes Formular weitergeben, siehe AccountDialog
     const personName = cleanName(name);
     if (!valid || !personName) return;
-    if (settling && settleMode === "items" && !settles.length) {
+    if (selectedOnly && !picked.length) {
       setError("Bitte mindestens eine Schuld auswählen.");
       return;
     }
-    const values = { person: personName, date, amount: (sign * cents) / 100, kind, reason: reason.trim() };
+    const values = { person: personName, date, amount: (sign * counted) / 100, kind, reason: reason.trim() };
     setSaving(true);
     try {
       if (entry) await updateDebt(entry.id, values);
-      else await createDebts([{ ...values, transactionId: booking?.id ?? null, ...(settles.length ? { settles } : {}) }]);
+      else {
+        const settles = selectedOnly ? { settles: picked.map((d) => d.id) } : {};
+        await createDebts([{ ...values, transactionId: booking?.id ?? null, ...settles }]);
+      }
       onSaved();
       close();
     } catch (err) {

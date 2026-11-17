@@ -71,11 +71,13 @@ function readEntry(body, partial = false) {
     const id = body.transactionId ?? null;
     if (id !== null && !(Number.isInteger(id) && id > 0)) return { error: "Ungültige Buchung." };
     values.transaction_id = id;
-    const settles = body.settles ?? [];
-    if (!Array.isArray(settles) || settles.length > MAX_ENTRIES || !settles.every((s) => Number.isInteger(s) && s > 0)) {
-      return { error: "Ungültige Schulden zum Begleichen." };
-    }
-    if (settles.length) {
+    // Mit settles (auch leer) begleicht der Ausgleich nur ausgewählte Schulden und tilgt sonst nichts, z. B. der Teil
+    // einer Zahlung, der eine ausgewählte Schuld zu Ende bezahlt, die schon eine frühere Zahlung begleicht
+    if (body.settles !== undefined && body.settles !== null) {
+      const { settles } = body;
+      if (!Array.isArray(settles) || settles.length > MAX_ENTRIES || !settles.every((s) => Number.isInteger(s) && s > 0)) {
+        return { error: "Ungültige Schulden zum Begleichen." };
+      }
       if (values.kind !== "settlement") return { error: "Schulden begleicht nur ein Ausgleich." };
       values.settles = [...new Set(settles)];
     }
@@ -208,15 +210,16 @@ async function createEntries(db, entries, replace = []) {
     );
     ids.push(...rows.map((r) => r.id));
   }
-  // Ein Ausgleich, der bestimmte Schulden begleicht, einzeln: Die Schulden zeigen danach auf ihn
+  // Ein Ausgleich, der nur ausgewählte Schulden begleicht, einzeln und gekennzeichnet: Die Schulden zeigen danach auf ihn
   for (const e of entries.filter((entry) => entry.settles)) {
     const personId = people.get(e.person);
     const { rows: [row] } = await db.query(
-      `INSERT INTO debts (person_id, date, amount, kind, reason, transaction_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      `INSERT INTO debts (person_id, date, amount, kind, reason, transaction_id, settles_selected)
+       VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
       [personId, e.date, e.amount, e.kind, e.reason ?? "", e.transaction_id],
     );
     ids.push(row.id);
+    if (!e.settles.length) continue;
     // Offene Schulden derselben Person in Gegenrichtung: Zahlt sie, ihre bei dir (positiv), zahlst du, deine (negativ)
     const { rowCount } = await db.query(
       `UPDATE debts SET settled_by = $1
@@ -279,18 +282,90 @@ const PEOPLE = `SELECT p.id, p.name, COALESCE(sum(d.amount), 0)::float8 AS balan
   FROM people p LEFT JOIN debts d ON d.person_id = p.id`;
 
 /**
- * Einträge wie in GET /api/debts, mit Person und der Buchung, zu der sie gehören (sonst null). Bei einer beglichenen
- * Schuld der Ausgleich und sein Tag, bei einem Ausgleich die Zahl der Schulden, die er begleicht.
+ * Einträge wie in GET /api/debts, mit Person und der Buchung, zu der sie gehören (sonst null), und bei einer Schuld dem
+ * Ausgleich, der sie ausdrücklich begleicht (settledBy). Was davon getilgt ist, ergänzt withSettlement.
  */
 const ENTRIES = `SELECT d.id, d.person_id AS "personId", p.name AS person, to_char(d.date, 'YYYY-MM-DD') AS date,
   d.amount::float8 AS amount, d.kind, d.reason, d.transaction_id AS "transactionId",
   CASE WHEN t.id IS NOT NULL THEN json_build_object('id', t.id, 'accountId', t.account_id, 'type', t.type,
     'amount', t.amount::float8, 'date', to_char(t.date, 'YYYY-MM-DD'), 'counterparty', t.counterparty,
     'category', t.category, 'note', t.note) END AS transaction,
-  d.settled_by AS "settledBy", to_char(sb.date, 'YYYY-MM-DD') AS "settledDate",
-  (SELECT count(*) FROM debts c WHERE c.settled_by = d.id)::int AS "settlesCount"
-  FROM debts d JOIN people p ON p.id = d.person_id LEFT JOIN transactions t ON t.id = d.transaction_id
-  LEFT JOIN debts sb ON sb.id = d.settled_by`;
+  d.settled_by AS "settledBy"
+  FROM debts d JOIN people p ON p.id = d.person_id LEFT JOIN transactions t ON t.id = d.transaction_id`;
+
+/**
+ * Was von jeder Schuld getilgt ist, berechnet aus den Einträgen (je Person, beliebig viele Personen gemischt; date als
+ * YYYY-MM-DD, amount mit Vorzeichen, settledBy wie in ENTRIES, settlesSelected wie die Spalte settles_selected):
+ * - Eine Schuld mit settledBy hat ein Ausgleich ausdrücklich begleicht („Bestimmte Schulden“): Sie ist ganz getilgt,
+ *   am Tag dieses Ausgleichs, unabhängig von seinem Betrag. Ein solcher Ausgleich (settlesSelected oder mit
+ *   beglichenen Schulden) tilgt nichts weiter.
+ * - Jeder andere Ausgleich (vom Gesamtbetrag) tilgt die ältesten noch offenen Schulden derselben Person in
+ *   Gegenrichtung, eine nach der anderen; was am Ende nicht mehr reicht, tilgt die nächste teilweise. Die Ausgleiche
+ *   kommen dabei in zeitlicher Reihenfolge dran. Übersteigen sie alle Schulden, bleibt der Rest ohne Schuld.
+ * Liefert je Eintrag { paid, settledDate, covers }: bei einer Schuld den getilgten Betrag in Cent und den Tag, an dem sie
+ * ganz getilgt war (sonst null), bei einem Ausgleich die Zahl der Schulden, die er ganz oder teilweise tilgt.
+ */
+function settlementState(entries) {
+  const cents = (amount) => Math.round(Math.abs(Number(amount)) * 100);
+  const byDate = (a, b) => a.date.localeCompare(b.date) || a.id - b.id;
+  const state = new Map(entries.map((e) => [e.id, { paid: 0, settledDate: null, covers: 0 }]));
+  const date = new Map(entries.map((e) => [e.id, e.date]));
+  const explicit = new Set(entries.filter((e) => e.settlesSelected).map((e) => e.id));
+  for (const d of entries) {
+    if (d.settledBy === null || d.settledBy === undefined) continue;
+    explicit.add(d.settledBy);
+    Object.assign(state.get(d.id), { paid: cents(d.amount), settledDate: date.get(d.settledBy) ?? null });
+    if (state.has(d.settledBy)) state.get(d.settledBy).covers++;
+  }
+  for (const personId of new Set(entries.map((e) => e.personId))) {
+    for (const sign of [1, -1]) {
+      const of = entries.filter((e) => e.personId === personId);
+      const debts = of
+        .filter((e) => e.kind === "debt" && Math.sign(e.amount) === sign && (e.settledBy ?? null) === null)
+        .sort(byDate);
+      const payments = of
+        .filter((e) => e.kind === "settlement" && Math.sign(e.amount) === -sign && !explicit.has(e.id))
+        .sort(byDate);
+      let next = 0;
+      for (const payment of payments) {
+        let left = cents(payment.amount);
+        while (left > 0 && next < debts.length) {
+          const debt = debts[next];
+          const owed = state.get(debt.id);
+          const take = Math.min(left, cents(debt.amount) - owed.paid);
+          owed.paid += take;
+          left -= take;
+          state.get(payment.id).covers++;
+          if (owed.paid === cents(debt.amount)) {
+            owed.settledDate = payment.date;
+            next++;
+          }
+        }
+      }
+    }
+  }
+  return state;
+}
+
+/**
+ * Ergänzt Einträge wie aus ENTRIES um paid (getilgter Betrag einer Schuld in Euro), settledDate (Tag, an dem sie ganz
+ * getilgt war, sonst null) und settlesCount (wie viele Schulden ein Ausgleich ganz oder teilweise tilgt), siehe
+ * settlementState. Dafür lädt es alle Einträge der beteiligten Personen.
+ */
+async function withSettlement(db, rows) {
+  if (!rows.length) return rows;
+  const { rows: all } = await db.query(
+    `SELECT id, person_id AS "personId", to_char(date, 'YYYY-MM-DD') AS date, amount::float8 AS amount, kind,
+       settled_by AS "settledBy", settles_selected AS "settlesSelected"
+     FROM debts WHERE person_id = ANY($1::int[])`,
+    [[...new Set(rows.map((r) => r.personId))]],
+  );
+  const state = settlementState(all);
+  return rows.map((r) => {
+    const s = state.get(r.id) ?? { paid: 0, settledDate: null, covers: 0 };
+    return { ...r, paid: s.paid / 100, settledDate: s.settledDate, settlesCount: s.covers };
+  });
+}
 
 /** SQL: Einträge zur Buchung t, kurz, für die Liste der Buchungen; ohne eine leere Liste */
 const BOOKING_DEBTS = `COALESCE((SELECT json_agg(json_build_object('id', d.id, 'personId', d.person_id,
@@ -315,4 +390,6 @@ module.exports = {
   PEOPLE,
   ENTRIES,
   BOOKING_DEBTS,
+  settlementState,
+  withSettlement,
 };
